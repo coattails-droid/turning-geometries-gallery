@@ -1984,6 +1984,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   var FOLD_AMP = 0.85 * Math.PI;
   var SHELL_BG = 1.0; // Turning delta 2026-10-24: shells in the background (0.18); post-v1 2026-10-25 (Calvin): 0.36 -> 0.54 steady -> MAX 1.0, full gradient color
   var DUST_GAIN = 1.495; // post-v2 delta 2026-10-29 (Calvin): dust brightness +15% (1.15); post-v3 delta 2026-10-29 (Calvin): +30% more — 1.15 x 1.3 = 1.495. Multiplies the layer-ramp colors in buildPointCloud (draw clamps each channel at 1, so the brightest band clips)
+  var DUST_CONTRAST = 1.22; // post-v3 delta 2026-10-29 (Calvin): dust contrast +22% — each baked color is pushed away from the ramp's per-channel mean by this factor in buildPointCloud (mean preserved, spread widened)
   var POINT_TOTAL = 144000; // post-v2 delta 2026-10-29 (Calvin): rendered point count LOCKED series-wide — every token builds exactly this many points (see the shell allocation in buildPointCloud)
   var LOOP_S = 16, BREATH_S = 8;
   var SPEED = 0.5333333333333333; // pace history: 0.5, raised 23% to 0.615 on 2026-10-28 (loop 26.02s), set to 0.9142857142857143 on 2026-10-29 for a 7-minute full cycle; post-v2 delta 2026-10-29 (Calvin): slowed so the full 24-loop overlay cycle spans exactly 12 minutes — each fold loop is 30s of wall time (16 / 0.5333333333333333 = 30; 24 x 30 = 720s)
@@ -2472,13 +2473,23 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       return lerp3(RAMP8[i0], RAMP8[i0 + 1], x - i0);
     }
     var numGens = DUP_SCALES.length + 1, total0c = TWIN.length;
+    var gain0 = SHELL_BG * DUST_GAIN;
+    // Contrast pivot: the ramp's per-channel mean over t in
+    // [0,1] (exact integral of the piecewise-linear ramp),
+    // at the current gain.
+    var piv = [0, 0, 0];
+    for (var pi = 0; pi < RAMP8.length - 1; pi++) {
+      for (var pc = 0; pc < 3; pc++) piv[pc] += (RAMP8[pi][pc] + RAMP8[pi + 1][pc]) / 2;
+    }
+    for (var pc2 = 0; pc2 < 3; pc2++) piv[pc2] = piv[pc2] / (RAMP8.length - 1) * gain0;
     for (var ci = 0; ci < FAMa.length; ci++) {
       if (FAMa[ci] !== FAM.SHELL) continue;
       var srcI = ci < total0c ? ci : TWIN[ci];
       var gen = Math.min(numGens - 1, Math.floor(srcI / shellCount));
       var rc = rampAt((gen + GFa[ci]) / numGens);
-      var gain = SHELL_BG * DUST_GAIN;
-      C[ci * 3] = rc[0] * gain; C[ci * 3 + 1] = rc[1] * gain; C[ci * 3 + 2] = rc[2] * gain;
+      for (var cc = 0; cc < 3; cc++) {
+        C[ci * 3 + cc] = piv[cc] + (rc[cc] * gain0 - piv[cc]) * DUST_CONTRAST;
+      }
     }
 
     var nPts = P.length / 3;
