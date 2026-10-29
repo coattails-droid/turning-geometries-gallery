@@ -1978,7 +1978,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   var ROT180 = true;                   // rotate the final frame 180°
   var ROT_CW30 = Math.PI / 6;          // post-v2 delta 2026-10-29 (Calvin): rotate the ENTIRE composition 30° clockwise — applied to the projected coordinates in computeFrame (so fitView fits the rotated frame and the points stay crisp), on top of the ROT180 composite
   var CAM_DIST = 14.4; // scaled with the outermost overlay (3.6 at 1x, 7.2 at 2x, 14.4 at 4x, 28.8 at 8x). Post-v1 deltas 2026-10-26: layers halved to 1x + 2x (7.2), then the 4x layer brought back (14.4)
-  // (BLUR softening constant removed 2026-10-24 — no blur pass.)
+  // (BLUR_PX of delta 69 removed with the blur itself, same day.)
   var FOLD_R = 1.0;
   var TRI_PHI = Math.PI / 2; // the shared triangle orientation: one vertex up (foci, shells, fold core)
   var FOLD_AMP = 0.85 * Math.PI;
@@ -2716,6 +2716,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     RW = RW || 720;
     var PX = RW / 720;
     var DUST_R = Math.max(1, Math.round(1 * PX)); // dust speckle radius
+    var DUST_D = DUST_R * 2; // square speckle side (post-v3 delta 2026-10-29)
     var SC = fitView(cloud, RW);
 
     var scene = document.createElement("canvas");
@@ -2856,24 +2857,22 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
         buckets[bg][bf] = X; buckets[bg][bf + 1] = Y;
         bucketFill[bg] = bf + 2;
       }
-      // dust: one path + one fill per color, flushed in chunks of
-      // 2048 points (a single ~89k-arc path is a rasterizer cliff in
-      // some engines; 2048-arc chunks stay on the fast path and still
-      // cut canvas calls ~4000x vs per-point fills)
+      // dust: SQUARE speckles (post-v3 delta 2026-10-29, Calvin's
+      // direction — the performance option from the frame-rate
+      // discussion, taken together with the heavy composite blur
+      // below, which melts the speckle shape anyway). One fillRect
+      // per point in bucket order — the same painter sequence as
+      // the chunked arc paths this replaces, at a fraction of the
+      // raster cost. (History: per-color arc batches of 2048, an
+      // invisible-optimization pass; a single ~89k-arc path is a
+      // rasterizer cliff in some engines.)
       for (var gi2 = 0; gi2 < dustOrder.length; gi2++) {
         var bgid = dustOrder[gi2];
         var g2 = buckets[bgid], gcount = bucketFill[bgid];
         sctx.fillStyle = groupStyles[bgid];
-        sctx.beginPath();
-        var chunk = 0;
         for (var dj = 0; dj < gcount; dj += 2) {
-          sctx.moveTo(g2[dj] + DUST_R, g2[dj + 1]);
-          sctx.arc(g2[dj], g2[dj + 1], DUST_R, 0, TAU);
-          // flush full chunks only — an empty-path fill corrupts
-          // some rasterizers' path state (found via the QA harness)
-          if (++chunk === 2048 && dj + 2 < gcount) { sctx.fill(); sctx.beginPath(); chunk = 0; }
+          sctx.fillRect(g2[dj] - DUST_R, g2[dj + 1] - DUST_R, DUST_D, DUST_D);
         }
-        if (chunk > 0) sctx.fill();
       }
       // (The magenta fold-core outline of deltas 46-49 was
       // removed 2026-10-28 at Calvin's direction, with this
@@ -2883,10 +2882,13 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       // The web pair sets remain computed on the cloud for the
       // record.)
 
-      // final composite + 180° rotation. Blur REMOVED 2026-10-28
-      // at Calvin's direction ("take just the blur off, leave
-      // tracing"), tracing removed in the following delta — the
-      // composite is a straight drawImage of the single frame.
+      // final composite + 180° rotation. The 7px composite
+      // blur of delta 69 was removed the same day at Calvin's
+      // direction ("dont care for that blur in particular") —
+      // the composite is a straight drawImage of the single
+      // frame again; the square speckles of delta 68 stay.
+      // (Blur history: 0.45px composite blur removed 2026-10-28;
+      // 7px blur lived for one delta, 69.)
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       if (ROT180) ctx.setTransform(-1, 0, 0, -1, RW, RW);
       ctx.drawImage(scene, 0, 0);
