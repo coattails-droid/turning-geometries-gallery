@@ -1,0 +1,2954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Turning Geometries Series 7</title>
+<style>
+:root { color-scheme: dark; }
+body { margin: 0; background: #000; color: #e8e2d5; font-family: Georgia, 'Times New Roman', serif; }
+header { text-align: center; padding: 34px 16px 6px; }
+h1 { font-size: 30px; font-weight: normal; letter-spacing: 0.14em; margin: 0; }
+#grid { display: flex; flex-wrap: wrap; gap: 30px 26px; justify-content: center; padding: 30px 18px 46px; max-width: 1240px; margin: 0 auto; }
+figure { margin: 0; width: 360px; }
+.stage { position: relative; width: 360px; height: 360px; cursor: pointer; }
+.stage canvas { display: block; }
+.playbtn { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.playbtn span { width: 64px; height: 64px; border-radius: 50%; border: 1.5px solid rgba(232,226,213,0.85); background: rgba(0,0,0,0.45); color: #e8e2d5; font-size: 24px; display: flex; align-items: center; justify-content: center; padding-left: 5px; box-sizing: border-box; }
+.stage.playing .playbtn { display: none; }
+figcaption { text-align: center; font-size: 16.5px; margin-top: 10px; letter-spacing: 0.06em; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Turning Geometries Series 7</h1>
+</header>
+<div id="grid"></div>
+<script>
+// seed.js — hash-driven randomness architecture.
+//
+// Blends two methods for structuring seed generation:
+//
+//   Method 1 (segmentation): fixed slices of the 64-char token hash choose
+//     coarse traits (grid system, palette, density, accent). Transparent and
+//     legible: each trait maps to a fixed slice of the hash.
+//
+//   Method 3 (domain-separated sub-seeds): the full token hash plus a label
+//     ("structure", "tone", "accent-detail") is mixed through cyrb53 to seed
+//     an independent sfc32 stream per detail domain. Inexhaustible and
+//     iteration-safe: tweaking one domain never shifts another.
+//
+// The entropy always comes from the token hash. The mixer (cyrb53) is
+// deliberately non-cryptographic: it only separates domains, so it just needs
+// to be deterministic and well-distributed, not one-way.
+//
+// Works in browsers (window.SeedKit) and Node (module.exports).
+(function (global) {
+  "use strict";
+
+  // cyrb53: tiny non-cryptographic string hash -> 53-bit integer.
+  function cyrb53(str, seed) {
+    let h1 = 0xdeadbeef ^ (seed || 0);
+    let h2 = 0x41c6ce57 ^ (seed || 0);
+    for (let i = 0; i < str.length; i++) {
+      const ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+  }
+
+  // sfc32: small, fast, seedable PRNG. Returns a function yielding [0, 1).
+  // The Art Blocks ecosystem's standard choice for hash-seeded rendering.
+  function sfc32(a, b, c, d) {
+    return function () {
+      a >>>= 0; b >>>= 0; c >>>= 0; d >>>= 0;
+      let t = ((a + b) | 0) + d | 0;
+      d = (d + 1) | 0;
+      a = b ^ (b >>> 9);
+      b = (c + (c << 3)) | 0;
+      c = (c << 21) | (c >>> 11);
+      c = (c + t) | 0;
+      return (t >>> 0) / 4294967296;
+    };
+  }
+
+  function streamFromInt(n) {
+    const x = Math.floor(n);
+    return sfc32(x >>> 0, Math.floor(x / 4294967296) >>> 0, (x * 7) >>> 0, (x * 13 + 101) >>> 0);
+  }
+
+  // Method 3: domain-separated sub-seed from the FULL token hash + label.
+  // Always seed from the full hash (never a slice alone), so two tokens that
+  // share a coarse trait still render different micro-detail.
+  function subSeed(tokenHash, label) {
+    return cyrb53(tokenHash + "::" + label);
+  }
+
+  function streamFor(tokenHash, label) {
+    return streamFromInt(subSeed(tokenHash, label));
+  }
+
+  // Method 1: fixed-slice reads.
+  function sliceInt(tokenHash, startChar, charLen) {
+    return parseInt(tokenHash.slice(startChar, startChar + charLen), 16);
+  }
+
+  function sliceByte(tokenHash, byteIndex) {
+    return sliceInt(tokenHash, byteIndex * 2, 2);
+  }
+
+  // Rarity-weighted pick: map a byte (0-255) onto entries whose weights sum to 100.
+  function weightedPick(byteVal, entries) {
+    const roll = (byteVal / 256) * 100;
+    let acc = 0;
+    for (const e of entries) {
+      acc += e.weight;
+      if (roll < acc) return e.key;
+    }
+    return entries[entries.length - 1].key;
+  }
+
+  // Deterministic demo mint hashes. NOT blockhash-derived: reproducible
+  // stand-ins so the prototype renders identically everywhere. A production
+  // deployment would feed the chain-derived token hash in here instead.
+  //
+  // Bytes are extracted arithmetically (not from hex-string prefixes) so every
+  // byte is full-range uniform — slicing hex text would bias the top byte,
+  // since a 53-bit value's leading hex digit only carries 5 bits.
+  function demoMintHash(i) {
+    const bytes = [];
+    let n = 0;
+    while (bytes.length < 32) {
+      let x = cyrb53("tidal-geometries::mint::" + i + ":" + n++);
+      for (let b = 0; b < 6 && bytes.length < 32; b++) {
+        bytes.push(x % 256);
+        x = Math.floor(x / 256);
+      }
+    }
+    return bytes
+      .map(function (byte) { return byte.toString(16).padStart(2, "0"); })
+      .join("");
+  }
+
+  const SeedKit = {
+    cyrb53: cyrb53,
+    sfc32: sfc32,
+    streamFromInt: streamFromInt,
+    subSeed: subSeed,
+    streamFor: streamFor,
+    sliceInt: sliceInt,
+    sliceByte: sliceByte,
+    weightedPick: weightedPick,
+    demoMintHash: demoMintHash,
+  };
+
+  if (typeof module !== "undefined" && module.exports) module.exports = SeedKit;
+  else global.SeedKit = SeedKit;
+})(typeof self !== "undefined" ? self : this);
+</script>
+<script>
+// traits.js — Method 1 coarse trait derivation and rarity.
+//
+// Turning Geometries trait map — TWO traits remain (Calvin,
+// 2026-10-28: "Everything other than grid and density can be
+// removed from traits"):
+//
+//   grid system         -> SERIES-LOCKED to fusion-inv (Linear Grid
+//                          over Ring Field; byte 0 no longer read;
+//                          locked 2026-10-29 at Calvin's direction)
+//   density             -> SERIES-LOCKED to Standard (byte 2 no longer
+//                          read; locked 2026-10-29 at Calvin's direction),
+//                          which also locks the ring count at 6
+//
+// Removed 2026-10-28: palette (byte 1), accent (byte 3), accent
+// hue set (byte 4 + the "traits:hues" stream), dot grid
+// (byte 5), wave trains (byte 6) — they described the dot layer
+// and the audio, both gone from the piece, and had no visible
+// effect on the render. The renderer is series-locked where
+// those traits used to point: Sunset render palette, square
+// dot placement for the dormant web record, double wave trains.
+//
+// Ring count is DERIVED from the density trait via DENSITY_RINGS
+// below (sparse -> 3, standard -> 6, dense -> 9), not a separate
+// slice — with density series-locked to Standard, every token
+// has 6 rings. When the renderer is built, consume DENSITY_RINGS
+// from this module — do not hard-code a second table.
+//
+// Each byte is mapped through rarity weights (weightedPick).
+//
+// The derivation below still feeds the geometry (grid key ->
+// compositeFor, density key -> module size + ring count), but
+// the trait LABELS were removed 2026-10-29 at Calvin's
+// direction: with grid and density series-locked, the labels
+// differentiated nothing. No marketplace-style features are
+// published from this module anymore; the only attributes
+// are the constant artist umbrella (contract) and the
+// renderer's geometry traits (Radii / Scale / Shell / Point).
+(function (global) {
+  "use strict";
+
+  const SeedKit = typeof require !== "undefined" ? require("./seed.js") : global.SeedKit;
+
+  // Grid systems are composites: every mint renders each listed system in
+  // draw order (first entry = bottom layer), so both fields combine in each
+  // piece. Same composite structure as v1 — the triangle field is replaced
+  // by the ring field. (The two stack orders and their 70/30 weights were
+  // retired by the 2026-10-29 series lock below.)
+  // Series-locked 2026-10-29 (Calvin): every token is fusion-inv.
+  // The fusion stack order (70/30) is retired; byte 0 is no
+  // longer read.
+  const GRIDS = [
+    { key: "fusion-inv", label: "Linear Grid \u2295 Ring Field", weight: 100,
+      systems: ["linear", "rings"] },
+  ];
+
+
+  // Series-locked 2026-10-29 (Calvin): every token is Standard.
+  // The Sparse/Dense weights (25/50/25) are retired; byte 2 is
+  // no longer read.
+  const DENSITIES = [
+    { key: "standard", label: "Standard", weight: 100 },
+  ];
+
+  // Ring count derived from density — one fewer slice, zero redundancy.
+  const DENSITY_RINGS = { sparse: 3, standard: 6, dense: 9 };
+
+
+
+
+
+  function deriveTraits(tokenHash) {
+    const grid = "fusion-inv"; // series-locked (see GRIDS note)
+    const density = "standard"; // series-locked (see DENSITIES note)
+    return { grid: grid, density: density, rings: DENSITY_RINGS[density] };
+  }
+
+
+
+  // Order-insensitive comparison so hue sets compare as sets.
+  function traitEq(a, b) {
+    const ka = Array.isArray(a) ? a.slice().sort().join("+") : a;
+    const kb = Array.isArray(b) ? b.slice().sort().join("+") : b;
+    return ka === kb;
+  }
+
+  // Classic PFP rarity score: sum over traits of (population / trait count).
+  // Higher = rarer.
+  function scoreRarity(populationTraits, traits) {
+    const n = populationTraits.length;
+    let score = 0;
+    ["grid", "density", "rings"].forEach(function (k) {
+      const count = populationTraits.filter(function (p) { return traitEq(p[k], traits[k]); }).length;
+      score += n / Math.max(1, count);
+    });
+    return score;
+  }
+
+  // Resolve a grid trait key to its ordered list of renderer systems
+  // (bottom layer first). Solo keys resolve to themselves.
+  function compositeFor(gridKey) {
+    const entry = GRIDS.find(function (g) { return g.key === gridKey; });
+    if (entry && Array.isArray(entry.systems) && entry.systems.length) return entry.systems.slice();
+    return [gridKey];
+  }
+
+  const TGTraits = {
+    GRIDS: GRIDS,
+    DENSITIES: DENSITIES,
+    DENSITY_RINGS: DENSITY_RINGS,
+    deriveTraits: deriveTraits,
+    compositeFor: compositeFor,
+    scoreRarity: scoreRarity,
+  };
+
+  if (typeof module !== "undefined" && module.exports) module.exports = TGTraits;
+  else global.TGTraits = TGTraits;
+})(typeof self !== "undefined" ? self : this);
+</script>
+<script>
+// artwork.js — Tidal Geometries: generative ring-lattice art from a token hash.
+//
+// Coarse structure comes from Method 1 traits (grid / palette / density /
+// accent / wave trains). All micro-detail comes from Method 3
+// domain-separated streams, so each detail domain ("rings:centers",
+// "rings:spokes", "structure", "tone", "accent-detail", ...) is an
+// independent deterministic random stream. Same hash -> same piece, forever,
+// anywhere.
+//
+// The composition is ONE welded graph drawn in three rotated layers: a
+// linear (square) grid welded to a concentric ring lattice. The rings grow
+// from 2 seeded foci (series-locked) snapped to square-grid vertices; ring
+// radii are seeded picks from the lattice distances mod·√(i²+j²), so in the
+// base layer every ring passes exactly through grid vertices — the two
+// systems share one vertex set, the same welding
+// philosophy as Seeded Geometries v1's triangle/grid weld. Spokes radiate
+// from each focus along seeded lattice directions atan2(j,i) (seeded count,
+// Method 3 fine detail). Every crossing or
+// touch between any two edges — within a layer or across layers — is a
+// welded vertex, so no line ever crosses another without joining it.
+//
+// Motion is the expanding-ring wave: concentric wavefronts radiate from the
+// ring center(s) — 2 trains per loop (series-locked) — and each shard
+// (one welded parent: a grid line, a ring, or a spoke) lifts, spins a full
+// 360° about its own centroid, stretches, and settles as the
+// wavefront passes. The 8s loop holds 2s of exact rest at both ends; the
+// envelope vanishes at both ends so the loop closes seamlessly.
+//
+// Render entry: TGArt.render(ctx, sizePx, tokenHash, layers, phase).
+(function (global) {
+  "use strict";
+
+  const SeedKit = typeof require !== "undefined" ? require("./seed.js") : global.SeedKit;
+  const Traits = typeof require !== "undefined" ? require("./traits.js") : global.TGTraits;
+  const Layers = typeof require !== "undefined"
+    ? (function () { try { return require("./layers.js"); } catch (e) { return null; } })()
+    : global.TGLayers;
+
+  // Abyssal bioluminescent: the series' single signature palette.
+  const PALETTES = {
+    abyssal: { bg: "#000000", ink: "#e9e3d3", wash: "rgba(233,227,211,0.06)", accent: "#22d3ee" },
+  };
+
+  const DENSITY_MODULES = { sparse: 3, standard: 4, dense: 5 };
+  const DENSITY_RINGS = Traits.DENSITY_RINGS; // { sparse: 3, standard: 6, dense: 9 }
+  // Ring polygon resolution: segments per ring. 64 keeps even the largest
+  // rings smooth at 720px+ while the weld's spatial hash keeps the pairwise
+  // cost local.
+  const RING_SEG = 64;
+  // Ring radius bound: radii are drawn from the sorted set of distinct
+  // lattice distances mod·√(i²+j²) within a per-focus bound, so in the
+  // base layer every ring passes exactly through square-grid vertices
+  // (v1-style welding). The bound for a focus is its farthest distance
+  // to the weld keep-square's corners (d_far) minus RING_FIT_MARGIN·S:
+  // a ring must penetrate the keep-square deep enough that a 64-gon
+  // vertex lands inside, otherwise the weld drops the whole ring and the
+  // trait's ring count would not draw. Focus candidates that cannot fit
+  // the tier's ringCount (only the exact-center standard candidate) are
+  // excluded from selection — a focus must be able to show its rings.
+  // (1.2·S of headroom would leave dead outer rings around central foci;
+  // the old 0.78·S scheme fit by keeping every ring small.)
+  const RING_FIT_MARGIN = 0.01;
+  // The accent rings: every piece carries four fixed rings of accent dots —
+  // an inner ring of ACCENT_DOTS on the vertices nearest the piece center,
+  // an outer ring of up to ACCENT_DOTS_OUTER on the grid's outer
+  // vertices, nearest the frame edge, and two middle rings of up to
+  // ACCENT_DOTS_MID1 and ACCENT_DOTS_MID2 on the unoccupied vertices
+  // between — 99 dots per piece. All dots sit inside the visible
+  // frame (the candidate set is the visible window plus a dot-radius
+  // margin). (Inherited architecture from v1; the dots ride the
+  // expanding-ring wave.)
+  const ACCENT_DOTS = 12;
+  const ACCENT_DOTS_OUTER = 21;
+  const ACCENT_DOTS_MID1 = 33;
+  const ACCENT_DOTS_MID2 = 33;
+  // The six primary neon dot colors. Fixed across the series — the dots
+  // are the neon field; the per-token hue set (P.accents) drives only the
+  // linework wash, so each piece keeps its own hue identity under the
+  // rainbow. Warm end removed per director: the field stays on the cool
+  // bioluminescent spectrum (lime through magenta).
+  const NEON_DOT_COLORS = [
+    "#b6ff00", // lime
+    "#00ff66", // green
+    "#00f0ff", // cyan
+    "#2e6bff", // blue
+    "#8b2bff", // violet
+    "#ff2bd6", // magenta
+  ];
+  const DOT_SIZE = 0.88;
+  // Every accent dot carries a smaller center dot: this fraction of the
+  // accent dot's radius. The core is medium cool grey — between the neon
+  // and the dark ground — and the core itself carries a still smaller
+  // near-black pinprick (DOT_INNER, fraction of the core radius) at its
+  // heart.
+  const DOT_CENTER = 0.60;
+  const DOT_CORE = "#0b0b0b";
+  const DOT_GREY = "#75808f";
+  const DOT_INNER = 0.38;
+  const BONE = PALETTES.abyssal.ink; // "#e9e3d3", the bone knockout tone
+  const CENTER_ALPHA = 0.55;
+  // Outward flight: as a wavefront passes, each accent dot rides the same
+  // envelope and radial delay as the shards around it, flying outward from
+  // the nearest ring center. At peak envelope a dot has traveled a seeded
+  // fraction of its radial distance outward, between DOT_OUTWARD[0] and
+  // DOT_OUTWARD[1].
+  const DOT_OUTWARD = [0.15, 0.60];
+
+  // Frame hold: the wave's motion amplitude damps to zero at the visible
+  // frame's edge, over a band EDGE_HOLD·S wide just inside it. Linework that
+  // crosses the frame keeps crossing it at every phase — the piece stays
+  // anchored to the frame while the interior moves. Weighting is by shard
+  // centroid, so long grid lines stay wild in the interior even as their
+  // ends hold the frame. The band (0.10·S) stays wider than the farthest a
+  // shard can fly, so the pinned/moving transition never shows a seam.
+  const EDGE_HOLD = 0.10;
+
+  // Accent colors, keyed by the ACCENT_HUES trait keys in traits.js.
+  // Bioluminescent warms: amber, coral, and ember.
+  // Standard 6-digit HTML hex; every entry must match /^#[0-9a-f]{6}$/i.
+  const HUE_COLORS = {
+    amber:  "#fbbf24",
+    coral:  "#fb7185",
+    ember:  "#fb923c",
+  };
+
+  function line(ctx, w) {
+    ctx.lineWidth = w;
+  }
+
+  const TAU = Math.PI * 2;
+
+  // Loop-phase oscillator: exactly 0 at phase 0 and phase 1, smooth and
+  // periodic between. k = integer cycles per loop, phi = per-element phase
+  // offset. Because every oscillator-driven quantity is built from osc(),
+  // frame(1) is identical to frame(0): the loop always closes seamlessly.
+  function osc(k, phi, phase) {
+    // Exact zeros at the loop endpoints: sin() of large arguments never
+    // cancels exactly in floats, so pin the endpoints explicitly. Every
+    // oscillator-driven quantity derives from osc, so phase 1 === phase 0
+    // bit-for-bit and the 8s loop closes seamlessly.
+    if (phase === 0 || phase === 1) return 0;
+    return Math.sin(TAU * (k * phase + phi)) - Math.sin(TAU * phi);
+  }
+
+  // Deterministic per-element phase from a seeded value plus indices.
+  function ephi(seed, i, j) {
+    const x = Math.sin(seed + i * 12.9898 + j * 78.233) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  function frac(x) { return x - Math.floor(x); }
+
+  function sstep(a, b, x) {
+    const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  }
+
+  // Wave envelope: each shard runs its own local clock x = frac(mu*trains -
+  // delay), periodic in the motion window. The shard lifts as the wavefront
+  // passes over x in [0, 0.20), then reverses instantly at the peak and
+  // settles back into place over the long [0.20, 0.80) return — the loop's
+  // main motion. The only true rest is the forced [0.80, 1) zero zone: at
+  // mu = 0 every shard's local clock reads 1 - delay, so the envelope must
+  // vanish on [1 - maxDelay, 1] to open the window on the intact piece. The
+  // smoothstep joints give zero velocity at the peak, so the shards rise and
+  // fall with no pause and no kink. With 2–3 wave trains the local clock
+  // runs 2–3× per window and each shard rides that many wavefronts.
+  //
+  // Choreography: the 8s loop holds 2s of rest, plays the whole envelope
+  // over a 4s motion window, then rests 2s more. motionMu maps loop phase
+  // to motion progress mu in [0, 1] over phase [0.25, 0.75), and returns
+  // -1 (at rest) outside it.
+  function waveEnv(x) {
+    if (x < 0.20) return sstep(0, 0.20, x);         // lift
+    if (x < 0.80) return 1 - sstep(0.20, 0.80, x);  // settle (instant reversal at peak)
+    return 0;                                      // rest: intact (forced)
+  }
+
+  // Shard spin: a full 360° turn in seeded direction. SPIN_TURNS = 1.0, and
+  // the profile is monotonic — 0 at flight start, exactly 1.0 turns from
+  // SPIN_WINDOW on — so the shard lands back in its original orientation
+  // with no snap (a full turn is identical to 0°). The spin is NOT scaled
+  // by the frame-hold weight: a partial turn at envelope close would pop
+  // when the transform releases, so every moving shard completes the whole
+  // turn; edge-pinned shards simply stir in place while staying
+  // translationally pinned. (Inherited from v1's audit fix: the old code
+  // let spin accumulate to 180° and cut to 0 in one frame — a visible pop.)
+  const SPIN_TURNS = 1.0;
+
+  // Shard spin window: the twist resolves over the first SPIN_WINDOW of
+  // the shard's local clock — well before the wave (translation + stretch,
+  // driven by the envelope out to x = 0.80) finishes. So each shard
+  // untwists first, then glides home straight: no twisting while landing.
+  // The twist peaks at SPIN_WINDOW / 2, just past full lift, when the shard
+  // is at max displacement.
+  const SPIN_WINDOW = 0.55;
+
+  // The spin profile: 0 at flight start, easing to exactly 1.0 at
+  // SPIN_WINDOW and holding there — the shard completes its full turn just
+  // past max lift, then glides home straight: no rotating while landing.
+  // Clamped to exact 0/1 at the ends (sstep float dust is not zero).
+  function spinProg(x) {
+    if (x <= 0) return 0;
+    if (x >= SPIN_WINDOW) return 1;
+    return sstep(0, SPIN_WINDOW, x);
+  }
+
+  // Motion window for the 8s loop: 2s rest, 4s wave, 2s rest. Returns
+  // motion progress mu in [0, 1], or -1 when the piece is at rest.
+  const LOOP_S = 8, REST_S = 2;
+  function motionMu(phase) {
+    const a = REST_S / LOOP_S, b = 1 - REST_S / LOOP_S;
+    if (phase < a || phase >= b) return -1;
+    return (phase - a) / (b - a);
+  }
+
+  // Ring foci: exactly 2 seeded centers per token (series-locked), in
+  // CANVAS coords — the same canvas point in every layer, so every
+  // layer's rings are concentric on the foci and the motion wave radiates
+  // from the true ring centers. Candidates are square-grid vertices in the
+  // BASE layer's patch frame ((ci+di)·mod, (cj+dj)·mod over the central
+  // 3×3 vertex neighborhood), mapped to canvas through the base layer's
+  // rotation — so in the base layer each focus sits EXACTLY on a grid
+  // vertex, and the lattice radii below are measured from true vertices
+  // (v1-style welding). Candidates that cannot fit the tier's ringCount
+  // lattice rings inside the weld keep-square are excluded (only the
+  // exact-center standard candidate) — a focus must be able to show its
+  // rings. Positions come from their own domain stream ("rings:centers")
+  // so center placement never shifts any other stream. Each focus carries
+  // its base-frame lattice indices (bi, bj) and its radius bound.
+  function ringCenters(tokenHash, mod, S, ringCount) {
+    const s = SeedKit.streamFor(tokenHash, "rings:centers");
+    const cand = focusCandidates(mod, S, ringCount);
+    // Fisher-Yates partial shuffle: the first 2 entries are the foci.
+    for (let i = cand.length - 1; i > 0; i--) {
+      const j = Math.floor(s() * (i + 1));
+      const tmp = cand[i]; cand[i] = cand[j]; cand[j] = tmp;
+    }
+    const ang = LAYER_ANGLES[0], cosA = Math.cos(ang), sinA = Math.sin(ang);
+    const cx = S / 2, cy = S / 2;
+    // First 2 entries are the 2D foci (series-locked). The 3rd shuffled
+    // candidate is also returned: Turning Geometries' volumetric build
+    // uses it as a third focus (post-v1 delta 2026-10-25, Calvin —
+    // hash-seeded grid vertex, same shuffle, same stream).
+    return cand.slice(0, 3).map(function (c) {
+      const bx = c.bi * mod, by = c.bj * mod;
+      const dx = bx - cx, dy = by - cy;
+      return { x: cx + dx * cosA - dy * sinA,
+               y: cy + dx * sinA + dy * cosA,
+               bi: c.bi, bj: c.bj, bound: c.bound };
+    });
+  }
+
+  // Focus candidates with per-candidate radius bounds. A ring of radius r
+  // about a focus survives the weld iff its circle reaches the
+  // keep-square ([-0.12S, 1.12S]², matching weldEdges' inClip); bound =
+  // d_far − margin where d_far is the farthest keep-square corner
+  // distance and the margin guarantees a 64-gon vertex lands inside the
+  // keep-square (otherwise the weld drops the whole ring). Candidates
+  // with fewer than ringCount lattice distances inside their bound are
+  // dropped — every remaining candidate can show its full ring count.
+  function focusCandidates(mod, S, ringCount) {
+    const ci = Math.round((S / 2) / mod), cj = Math.round((S / 2) / mod);
+    const ang = LAYER_ANGLES[0], cosA = Math.cos(ang), sinA = Math.sin(ang);
+    const k = 0.12 * S, margin = RING_FIT_MARGIN * S;
+    const out = [];
+    for (let dj = -1; dj <= 1; dj++)
+      for (let di = -1; di <= 1; di++) {
+        const bx = (ci + di) * mod, by = (cj + dj) * mod;
+        const dx = bx - S / 2, dy = by - S / 2;
+        const cx = S / 2 + dx * cosA - dy * sinA;
+        const cy = S / 2 + dx * sinA + dy * cosA;
+        let df = 0;
+        const corners = [[-k, -k], [-k, S + k], [S + k, -k], [S + k, S + k]];
+        for (let qi = 0; qi < 4; qi++)
+          df = Math.max(df, Math.hypot(cx - corners[qi][0], cy - corners[qi][1]));
+        const bound = df - margin;
+        if (latticeRadii(mod, bound).length >= ringCount)
+          out.push({ bi: ci + di, bj: cj + dj, bound: bound });
+      }
+    return out;
+  }
+
+  // Lattice radii: the sorted set of distinct mod·√(i²+j²) distances
+  // within maxR of a focus, as {r, n} with n = i²+j² the exact integer.
+  // Deduped on the INTEGER s2 (exact — e.g. (1,7) and (5,5) share
+  // s2 = 50, one ring). Rings at these radii about a grid-vertex focus
+  // pass exactly through grid vertices.
+  function latticeRadii(mod, maxR) {
+    const seen = new Set();
+    const out = [];
+    const maxK = Math.ceil(maxR / mod);
+    for (let i = 0; i <= maxK; i++)
+      for (let j = 0; j <= maxK; j++) {
+        if (i === 0 && j === 0) continue;
+        const s2 = i * i + j * j;
+        if (seen.has(s2)) continue;
+        const d = Math.sqrt(s2) * mod;
+        if (d > maxR + 1e-9) continue;
+        seen.add(s2);
+        out.push({ r: d, n: s2 });
+      }
+    out.sort(function (a, b) { return a.r - b.r; });
+    return out;
+  }
+
+  // Seeded subset of ringCount {r, n} radii from the lattice set inside
+  // maxR (new domain "rings:radii" — no existing stream's draw order
+  // changes). Sorted ascending afterwards so ring index j still runs
+  // innermost → outermost (the ring-fade alpha keys on it). Spacing is
+  // non-uniform by design: number-driven, on-thesis.
+  function selectRadii(tokenHash, mod, maxR, ringCount) {
+    const all = latticeRadii(mod, maxR);
+    const n = Math.min(ringCount, all.length);
+    const s = SeedKit.streamFor(tokenHash, "rings:radii");
+    const idx = all.map(function (_, i) { return i; });
+    for (let i = 0; i < n; i++) {
+      const j = i + Math.floor(s() * (idx.length - i));
+      const tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
+    }
+    const sel = idx.slice(0, n).map(function (i) { return all[i]; });
+    sel.sort(function (a, b) { return a.r - b.r; });
+    return sel;
+  }
+
+  // Integer lattice offsets on the circle i²+j² === n, sorted by polar
+  // angle. The base-layer ring polygon snaps its corners onto these, so
+  // every ring passes bit-exactly through lattice vertices instead of
+  // merely near them (a uniform 64-gon's chords miss by up to ~1px).
+  function ringSnapOffsets(n) {
+    const out = [];
+    const maxK = Math.ceil(Math.sqrt(n));
+    for (let i = -maxK; i <= maxK; i++)
+      for (let j = -maxK; j <= maxK; j++) {
+        if (i * i + j * j !== n) continue;
+        out.push({ i: i, j: j, a: Math.atan2(j, i) });
+      }
+    out.sort(function (p, q) { return p.a - q.a; });
+    return out;
+  }
+
+  // Spoke angle set: distinct atan2(j,i) directions to lattice vertices
+  // within reach of a focus, sorted ascending. A spoke on one of these
+  // angles from a grid-vertex focus passes exactly through grid vertices
+  // — so ring/spoke coincidences land on lattice vertices.
+  function spokeAngleSet(mod, reach) {
+    const seen = new Set();
+    const out = [];
+    const maxK = Math.ceil(reach / mod);
+    for (let i = -maxK; i <= maxK; i++)
+      for (let j = -maxK; j <= maxK; j++) {
+        if (i === 0 && j === 0) continue;
+        if (Math.sqrt(i * i + j * j) * mod > reach + 1e-9) continue;
+        const a = Math.atan2(j, i);
+        const key = Math.round(a * 1e12);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(a);
+      }
+    out.sort(function (a, b) { return a - b; });
+    return out;
+  }
+
+  // Per-focus seeded spoke angles (domain "rings:spokes"). Count
+  // behavior is unchanged (8–24 seeded); the angles are now seeded
+  // picks from the lattice angle set instead of evenly spaced spokes
+  // from a continuous offset. Draw sequence within the domain changed
+  // ([nSp, then nSp angle picks] per focus — was [nSp, offset]); no
+  // trait stream is affected.
+  function selectSpokeSets(tokenHash, mod, reach) {
+    const s = SeedKit.streamFor(tokenHash, "rings:spokes");
+    const angles = spokeAngleSet(mod, reach);
+    const sets = [];
+    for (let f = 0; f < 2; f++) {
+      const nSp = 8 + Math.floor(s() * 17); // 8..24
+      const idx = angles.map(function (_, i) { return i; });
+      const n = Math.min(nSp, idx.length);
+      for (let i = 0; i < n; i++) {
+        const j = i + Math.floor(s() * (idx.length - i));
+        const tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
+      }
+      sets.push(idx.slice(0, n).map(function (i) { return angles[i]; }));
+    }
+    return sets;
+  }
+
+  // Geometry bundle: everything layerSoup and the sims need beyond the hash.
+  // Deterministic from (tokenHash, mod, S): safe to cache the graph without
+  // keying on it separately.
+  function makeGeo(tokenHash, t, mod, S) {
+    const ringCount = t.rings || DENSITY_RINGS[t.density] || DENSITY_RINGS.standard; // John 2026-10-16: prefer t.rings (Density byte 3) over byte-2 density
+    const centersAll = ringCenters(tokenHash, mod, S, ringCount);
+    const centers = centersAll.slice(0, 2); // 2D geometry keeps exactly 2 foci
+    // Shared radius bound: every selected ring must survive the weld
+    // around BOTH foci, so the lattice set is bounded by the smaller
+    // focus bound. Each candidate passed the ≥ ringCount filter, so the
+    // shared set holds at least ringCount distances.
+    const rBound = Math.min(centers[0].bound, centers[1].bound);
+    return {
+      centers: centers,
+      centersAll: centersAll, // + 3rd shuffled candidate (Turning volumetric only)
+      ringCount: ringCount,
+      radii: selectRadii(tokenHash, mod, rBound, ringCount), // ascending {r, n} lattice radii
+      spokeSets: selectSpokeSets(tokenHash, mod, rBound + mod), // per-focus lattice angles
+      rBound: rBound,
+      trains: 2,          // series-locked double (was a weight-100 trait; traits slimmed to grid + density 2026-10-28)
+      dotGrid: "square",  // series-locked placement for the dormant dot sim (was a byte-5 trait, removed 2026-10-28)
+    };
+  }
+
+  // The wave field: ring centers plus the normalization distance. Delays
+  // are normalized by the farthest corner of the *visible region* from the
+  // farthest center, so the full [0, WAVE_DMAX] delay range always spans
+  // what the viewer sees — every wave genuinely sweeps edge to edge.
+  function waveField(centers, region) {
+    const r = region || [0, 0, 1, 1];
+    let maxD = 0.001;
+    centers.forEach(function (c) {
+      [[r[0], r[1]], [r[2], r[1]], [r[0], r[3]], [r[2], r[3]]].forEach(function (q) {
+        const dx = q[0] - c.x, dy = q[1] - c.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > maxD) maxD = d;
+      });
+    });
+    return { centers: centers, maxD: maxD };
+  }
+
+  // Maximum radial delay, in motion-window units: the wavefront crosses the
+  // visible piece in 0.20/1.12 of the 4s motion window.
+  const WAVE_DMAX = 0.20 / 1.12;
+
+  // One shard's delay from the field: 0 at the nearest ring center,
+  // WAVE_DMAX at the farthest visible corner, plus a small seeded jitter.
+  // The radial profile is a quarter sine — π/2 of spatial phase across the
+  // piece — so the wavefront punches out fast near each focus and
+  // decelerates toward the far edge, lingering there before the return.
+  // With 2 foci each point follows its nearest center's wave (a Voronoi
+  // wavefront), so the waves read as concentric around every focus.
+  function waveDelay(f, x, y, ju) {
+    let rMin = Infinity;
+    for (let i = 0; i < f.centers.length; i++) {
+      const c = f.centers[i];
+      const dx = x - c.x, dy = y - c.y;
+      const r = Math.sqrt(dx * dx + dy * dy) / f.maxD;
+      if (r < rMin) rMin = r;
+    }
+    const r = Math.min(1, rMin);
+    const d = WAVE_DMAX * Math.sin(r * Math.PI / 2) + 0.06 * (ju - 0.5);
+    return Math.min(WAVE_DMAX, Math.max(0, d));
+  }
+
+  // --- The welded ring lattice ------------------------------------------------
+  // One square module, shared by every layer and every trait. The linear
+  // grid draws true squares on the module lines; the ring field grows
+  // concentric rings from each seeded focus at the seeded lattice radii
+  // mod·√(i²+j²) (deduped on the integer i²+j², shared across foci) —
+  // plus seeded spokes radiating from each focus. In the base layer each
+  // ring is a polygon whose corners snap bit-exactly onto the lattice
+  // vertices ((bi+i)·mod, (bj+j)·mod) with i²+j²===n (integer arithmetic,
+  // no trig), subdivided between corners to ≤2π/64 smoothness; the
+  // rotated layers keep uniform 64-gons and make no lattice claim.
+  // Within a layer, every vertex is a multiple of u = mod/3 — the same
+  // proportional system — so the linear grids are perfect squares. The
+  // rotated duplicates occupy rotated copies of that lattice. Every
+  // crossing or touch between any two edges — within a layer or across
+  // layers — is a welded vertex, so no line ever crosses another without
+  // joining it; in the base layer, ring/spoke/grid triple points fuse to
+  // a single vertex exactly on the lattice point.
+  //
+  // Spoke count and angles are pure Method 3 draws ("rings:spokes") — fine
+  // detail, not a coarse trait: the angles are seeded picks from the
+  // lattice directions atan2(j,i), aimed exactly at grid vertices. The
+  // focus count is series-locked at 2; their positions are seeded.
+  //
+  // LAYER_DIM sets each layer's alpha multiplier. All layers render at equal
+  // transparency (no depth dimming) so the three rotated lattices read as one
+  // unified field rather than a foreground/background stack — at 66% alpha.
+  // The whole composition is turned 75° clockwise on screen (positive angle
+  // reads clockwise in canvas y-down coordinates); the duplicates stay at
+  // exactly +30°/+60° relative to the base layer.
+  //
+  // LAYER_TINT gives each rotated lattice its own tone: pale teal on the
+  // base layer, pale cyan on the +30° duplicate, pale violet on the +60°.
+  // Accent dots, texture deck, and background are untouched.
+  // Tuning knobs: DENSITY_MODULES, DENSITY_RINGS, LAYER_DIM, LAYER_TINT,
+  // ORIENT_CW, ZOOM, RING_SEG, STIPPLE_DOT, STIPPLE_PITCH, the stroke width
+  // divisor in drawWelded (S/1240), and the wave system in weldedSim (shard
+  // flight magnitude, spin, envelope timing, radial delay spread, trains).
+  // Whole-composition orientation: 75° clockwise, duplicates at +30°/+60°
+  // relative (105°/135° absolute).
+  const ORIENT_CW = Math.PI / 6 + Math.PI / 4;
+  const LAYER_ANGLES = [ORIENT_CW, ORIENT_CW + Math.PI / 6, ORIENT_CW + Math.PI / 3];
+  const LAYER_DIM = [0.66, 0.66, 0.66];
+  const RING_DIM = 0.35;
+  const LAYER_TINT = ["#99f6e4", "#a5f3fc", "#c4b5fd"];
+  // Stipple: every line in the composition is drawn as a dotted line — dots
+  // of diameter STIPPLE_DOT × lineWidth, spaced STIPPLE_PITCH × lineWidth
+  // center-to-center. Dots are placed at fixed fractions along each edge in
+  // the shard's local frame, so they ride the wave without swimming.
+  // Tuning knobs: STIPPLE_DOT, STIPPLE_PITCH.
+  const STIPPLE_DOT = 5.3;
+  const STIPPLE_PITCH = 13.6;
+  // Hue wash: a soft halo of the piece's hue-set colors laid across the
+  // stippled linework, under the bone dots. Same dot positions as the
+  // stipple (so it follows the lines exactly), WASH_R_MULT × the stipple
+  // radius so neighbors merge into a continuous wash, at WASH_ALPHA over
+  // the per-parent tone alpha. Colors are picked per dot by a pure integer
+  // hash of (edge, dot) — deterministic, no stream draws, order-free.
+  // Tuning knobs: WASH_R_MULT, WASH_ALPHA.
+  const WASH_R_MULT = 4.0;
+  const WASH_ALPHA = 0.22;
+  // Zoom: the composition is drawn ZOOM× about the canvas center and cropped
+  // by the frame — fewer, larger modules on screen, and every motion reads
+  // larger too. Inherited from v1's tuning.
+  const ZOOM = 0.95;
+  // Geometry margin: the zoom-out shrinks the composition about the pivot,
+  // so the lattice is generated over an extended frame [-gm, S+gm] and the
+  // linework keeps bleeding to the canvas edge. Zero at ZOOM = 1 (no
+  // behavior change there); grows as ZOOM drops. Well inside the weld's
+  // ±12% clip region.
+  function geoMargin(S) { return Math.max(0, (S / ZOOM - S) / 2); }
+  // Global composition rotation: the entire piece (every layer, the ring
+  // lattice, spokes, dots, washes) rotates as one rigid body about the
+  // locked pivot before the frame crops it. Welds, traits, hashes, and the
+  // motion loop are untouched; the rotated corners fall to the black
+  // ground. Tuning knob: GLOBAL_ROT_CW (clockwise-positive, radians).
+  const GLOBAL_ROT_CW = -Math.PI / 12; // 15° counterclockwise
+  // The one locked pivot: every layer rotates about this point, and the
+  // frame zoom is centered on it. All rotation centers and the zoom
+  // translate read from here, so the layers can never drift apart.
+  function pivot(S) { return { x: S / 2, y: S / 2 }; }
+  const KIND_ORD = { h: 0, v: 1, ring: 2, spoke: 3 };  // stream-consumption order
+  const KIND_DRAW = { ring: 0, spoke: 1, h: 2, v: 2 }; // stroke order (rings under grid)
+  const KIND_DRAW_INV = { h: 0, v: 1, ring: 2, spoke: 3 }; // stroke order (grid under rings)
+
+  // Stroke order for a grid trait key: the inverted fusion stacks the
+  // linear grid under the ring field. Consumption order never changes, so
+  // the geometry and motion streams are identical either way — only the
+  // paint order flips.
+  function kindDrawFor(gridKey) {
+    return gridKey === "fusion-inv" ? KIND_DRAW_INV : KIND_DRAW;
+  }
+
+  // Subcell index range covering [-m, S+m] at pitch u = mod/3.
+  function gridPatch(mod, S, m) {
+    const u = mod / 3;
+    return { u: u, i0: Math.floor(-m / u) - 1, i1: Math.ceil((S + m) / u) + 1 };
+  }
+
+  // Point-soup edges for one layer: {x1,y1,x2,y2,kind,pi} with kind
+  // 'h'|'v'|'ring'|'spoke' and pi the parent index within (layer, kind), in
+  // generation order. 'h'/'v' are the true-square linear grid on the module
+  // lines; 'ring' edges are the RING_SEG-gon segments of each concentric
+  // ring about each focus; 'spoke' edges radiate from each focus past the
+  // outermost ring. Module lines are every 3rd subcell line, so the linear
+  // grid never duplicates an edge: each geometric edge is generated once.
+  function layerSoup(tokenHash, mod, S, layer, patch, geo) {
+    const ux = patch.u, uy = patch.u;
+    const ix0 = patch.i0, ix1 = patch.i1, iy0 = patch.i0, iy1 = patch.i1;
+    const soup = [];
+    const ang = LAYER_ANGLES[layer];
+    const cosA = Math.cos(ang), sinA = Math.sin(ang);
+    const pv = pivot(S);
+    const cx = pv.x, cy = pv.y;
+    function rot(x, y) {
+      if (ang === 0) return [x, y];
+      const dx = x - cx, dy = y - cy;
+      return [cx + dx * cosA - dy * sinA, cy + dx * sinA + dy * cosA];
+    }
+    function edge(x1, y1, x2, y2, kind, pi) {
+      const a = rot(x1, y1), b = rot(x2, y2);
+      soup.push({ x1: a[0], y1: a[1], x2: b[0], y2: b[1], kind: kind, pi: pi });
+    }
+    // Inverse rotation: canvas coords back into this layer's patch frame.
+    // Trait foci live in canvas coords — the same canvas point in every
+    // layer — so each layer's rings land concentric on the true ring
+    // centers and the motion wave radiates from them. Map each focus into
+    // this layer's patch frame before generating the ring field. Rings
+    // coincide across layers (crisp, trait-honest: "2 centers" reads as 2);
+    // the grid and the spoke fans still rotate, which is where the
+    // depth-field moire comes from.
+    function unrot(x, y) {
+      if (ang === 0) return [x, y];
+      const dx = x - cx, dy = y - cy;
+      return [cx + dx * cosA + dy * sinA, cy - dx * sinA + dy * cosA];
+    }
+    const foci = geo.centers.map(function (fc) {
+      const p = unrot(fc.x, fc.y);
+      // Keep the integer lattice coords: the base layer snaps ring
+      // polygon corners onto (bi+i)·mod, (bj+j)·mod bit-exactly.
+      return { x: p[0], y: p[1], bi: fc.bi, bj: fc.bj };
+    });
+    const x0 = ix0 * ux, x1 = ix1 * ux;
+    const y0 = iy0 * uy, y1 = iy1 * uy;
+    // linear grid: true squares on the module lines (every 3rd subcell line)
+    const hm0 = Math.ceil(iy0 / 3), hm1 = Math.floor(iy1 / 3);
+    const vm0 = Math.ceil(ix0 / 3), vm1 = Math.floor(ix1 / 3);
+    let hi = 0;
+    for (let m = hm0; m <= hm1; m++, hi++)
+      edge(x0, m * mod, x1, m * mod, "h", hi);
+    let vi = 0;
+    for (let m = vm0; m <= vm1; m++, vi++)
+      edge(m * mod, y0, m * mod, y1, "v", vi);
+    // ring field: concentric rings about each focus at the trait's
+    // seeded lattice radii (geo.radii, ascending {r, n}) — in the base
+    // layer every ring polygon snaps its corners bit-exactly onto the
+    // lattice vertices ((bi+i)·mod, (bj+j)·mod) with i²+j²===n, so
+    // ring/spoke/grid triple points fuse to a single welded vertex;
+    // the rotated layers keep uniform 64-gons (no lattice claim there) —
+    // plus the focus's seeded vertex-aimed spokes (geo.spokeSets[fi]),
+    // radiating past the outermost ring. One parent per ring and per
+    // spoke; the weld splits each spoke at every ring and grid crossing,
+    // and all spokes share the focus vertex (a welded hub).
+    let ri = 0;
+    let spokeId = 0; // global across foci: spoke parents must never collide
+    const reach = geo.rBound + mod; // spokes radiate past the outermost ring
+    const snapStep = TAU / RING_SEG; // filler smoothness matches the 64-gons
+    foci.forEach(function (fc, fi) {
+      for (let j = 0; j < geo.radii.length; j++) {
+        const rr = geo.radii[j], r = rr.r;
+        if (layer === 0) {
+          // Snapped polygon: corners are integer arithmetic —
+          // ((bi+i)·mod, (bj+j)·mod) — no trig, no unrot() roundtrip.
+          // Arcs between consecutive corners (wrapping around) are
+          // subdivided to ≤ snapStep so the ring stays as smooth as a
+          // 64-gon; fillers ride the true circle (1e-13 slop irrelevant).
+          const snaps = ringSnapOffsets(rr.n);
+          const poly = [];
+          for (let k = 0; k < snaps.length; k++) {
+            const s0 = snaps[k], s1 = snaps[(k + 1) % snaps.length];
+            poly.push([(fc.bi + s0.i) * mod, (fc.bj + s0.j) * mod]);
+            let arc = s1.a - s0.a;
+            if (arc <= 0) arc += TAU;
+            const nSeg = Math.max(1, Math.ceil(arc / snapStep - 1e-12));
+            for (let sg = 1; sg < nSeg; sg++) {
+              const a = s0.a + (arc * sg) / nSeg;
+              poly.push([fc.bi * mod + r * Math.cos(a),
+                         fc.bj * mod + r * Math.sin(a)]);
+            }
+          }
+          for (let k = 0; k < poly.length; k++) {
+            const p1 = poly[k], p2 = poly[(k + 1) % poly.length];
+            edge(p1[0], p1[1], p2[0], p2[1], "ring", ri);
+          }
+        } else {
+          // Uniform 64-gon. Phase-search: the weld drops a ring whose
+          // every vertex falls outside the keep-square, so when the
+          // default phase misses, try finer phase offsets until a vertex
+          // lands inside. (The circle always passes through the
+          // keep-square — its focus is interior — so only a grazing arc
+          // can still miss, and that cull is legitimate.) Rings that
+          // already survive keep their exact default tessellation.
+          const KK = 0.12 * S; // weld keep-square [-KK, S+KK]²
+          let phase = 0;
+          for (let attempt = 0; attempt < 4; attempt++) {
+            let hit = false;
+            for (let sgi = 0; sgi < RING_SEG && !hit; sgi++) {
+              const a = phase + (sgi / RING_SEG) * TAU;
+              const c = rot(fc.x + r * Math.cos(a), fc.y + r * Math.sin(a));
+              hit = c[0] > -KK && c[0] < S + KK && c[1] > -KK && c[1] < S + KK;
+            }
+            if (hit || attempt === 3) break;
+            phase += Math.PI / 128; // quarter-step: 4 distinct phases
+          }
+          for (let sgi = 0; sgi < RING_SEG; sgi++) {
+            const a1 = phase + (sgi / RING_SEG) * TAU, a2 = phase + ((sgi + 1) / RING_SEG) * TAU;
+            edge(fc.x + r * Math.cos(a1), fc.y + r * Math.sin(a1),
+                 fc.x + r * Math.cos(a2), fc.y + r * Math.sin(a2), "ring", ri);
+          }
+        }
+        ri++;
+      }
+      const sangles = geo.spokeSets[fi % geo.spokeSets.length];
+      for (let k = 0; k < sangles.length; k++) {
+        const a = sangles[k];
+        edge(fc.x, fc.y, fc.x + reach * Math.cos(a), fc.y + reach * Math.sin(a),
+             "spoke", spokeId++);
+      }
+    });
+    return { soup: soup };
+  }
+
+  // Vertex quantization for welding: absorbs float dust from rotated
+  // coordinates (1e-6 px is far below any visible threshold).
+  const WELD_EPS = 1e-6;
+
+  // Returns null (no touch), {t, u, x, y} (single crossing/touch point),
+  // or {collinear:true, t3, t4, u1, u2} for a collinear overlap: e2's
+  // endpoints project onto e1 at t3, t4; e1's endpoints onto e2 at u1, u2.
+  // Collinearity matters: a spoke can lie exactly on a rotated grid line,
+  // so overlap endpoints must weld too.
+  function segIntersect(e1, e2, verts) {
+    const p1 = verts[e1.a], p2 = verts[e1.b];
+    const p3 = verts[e2.a], p4 = verts[e2.b];
+    const dx1 = p2.x - p1.x, dy1 = p2.y - p1.y;
+    const dx2 = p4.x - p3.x, dy2 = p4.y - p3.y;
+    const den = dx1 * dy2 - dy1 * dx2;
+    const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1) || 1;
+    // Parallel test must be relative: rotated edges on the same lattice line
+    // differ by float noise (~1e-13 in den for |d|~30), far above any
+    // absolute epsilon. Real crossings here are >= 30° apart (sinθ >= 0.5),
+    // so sinθ < 1e-9 unambiguously means "same line".
+    if (den * den < 1e-18 * (dx1 * dx1 + dy1 * dy1) * (dx2 * dx2 + dy2 * dy2)) {
+      // Parallel: weld only if collinear (same line within 1e-9 px).
+      const c3 = (p3.x - p1.x) * dy1 - (p3.y - p1.y) * dx1;
+      const c4 = (p4.x - p1.x) * dy1 - (p4.y - p1.y) * dx1;
+      if (Math.abs(c3) > 1e-9 * len1 || Math.abs(c4) > 1e-9 * len1) return null;
+      const len12 = dx1 * dx1 + dy1 * dy1;
+      const t3 = ((p3.x - p1.x) * dx1 + (p3.y - p1.y) * dy1) / len12;
+      const t4 = ((p4.x - p1.x) * dx1 + (p4.y - p1.y) * dy1) / len12;
+      const len22 = dx2 * dx2 + dy2 * dy2;
+      const u1 = ((p1.x - p3.x) * dx2 + (p1.y - p3.y) * dy2) / len22;
+      const u2 = ((p2.x - p3.x) * dx2 + (p2.y - p3.y) * dy2) / len22;
+      const lo = Math.max(0, Math.min(t3, t4)), hi = Math.min(1, Math.max(t3, t4));
+      if (hi - lo < 1e-12) return null; // touch at endpoints at most: already joined
+      return { collinear: true, t3: t3, t4: t4, u1: u1, u2: u2,
+               x1: p1.x, y1: p1.y, dx1: dx1, dy1: dy1,
+               x2: p3.x, y2: p3.y, dx2: dx2, dy2: dy2 };
+    }
+    const t = ((p3.x - p1.x) * dy2 - (p3.y - p1.y) * dx2) / den;
+    const u = ((p3.x - p1.x) * dy1 - (p3.y - p1.y) * dx1) / den;
+    const e = 1e-9;
+    if (t < -e || t > 1 + e || u < -e || u > 1 + e) return null;
+    const tc = Math.min(1, Math.max(0, t));
+    const uc = Math.min(1, Math.max(0, u));
+    return { t: tc, u: uc, x: p1.x + tc * dx1, y: p1.y + tc * dy1 };
+  }
+
+  // Merge every layer's point-soup edges into one welded graph. Every
+  // crossing or touch between any two edges — within a layer (e.g. a spoke
+  // crossing a ring, a ring passing through a grid vertex) or across layers
+  // — becomes a shared vertex, and edges are split there. Sub-edges fully
+  // outside the canvas (plus a flex margin) are dropped: max flex is
+  // 0.026·S, so they can never enter the frame. Returns:
+  //   { verts, edges, parents, byParent, drawOrder, consOrder }
+  // edges: {a, b, par, sub, len}; parents: {layer, kind, pi}.
+  function weldEdges(soups, mod, S, kindDraw) {
+    const clip = S * 0.06;
+    const x0 = -clip, y0 = -clip, x1 = S + clip, y1 = S + clip;
+    const KD = kindDraw || KIND_DRAW;
+    const inClip = function (v) {
+      return v.x > x0 - clip && v.x < x1 + clip && v.y > y0 - clip && v.y < y1 + clip;
+    };
+    const vmap = new Map();
+    const verts = [];
+    function vid(x, y) {
+      const k = Math.round(x / WELD_EPS) + "," + Math.round(y / WELD_EPS);
+      let i = vmap.get(k);
+      if (i === undefined) { i = verts.length; verts.push({ x: x, y: y }); vmap.set(k, i); }
+      return i;
+    }
+    const edges = [];
+    soups.forEach(function (s, layer) {
+      s.soup.forEach(function (e) {
+        const a = vid(e.x1, e.y1), b = vid(e.x2, e.y2);
+        if (a === b) return;
+        edges.push({ a: a, b: b, layer: layer, kind: e.kind, pi: e.pi });
+      });
+    });
+
+    // Spatial hash: only nearby edge pairs are ever tested.
+    const B = mod;
+    const buckets = new Map();
+    edges.forEach(function (e, i) {
+      const A = verts[e.a], P = verts[e.b];
+      const bx0 = Math.floor(Math.min(A.x, P.x) / B), bx1 = Math.floor(Math.max(A.x, P.x) / B);
+      const by0 = Math.floor(Math.min(A.y, P.y) / B), by1 = Math.floor(Math.max(A.y, P.y) / B);
+      for (let bx = bx0; bx <= bx1; bx++) for (let by = by0; by <= by1; by++) {
+        const k = bx + "," + by;
+        let arr = buckets.get(k);
+        if (!arr) { arr = []; buckets.set(k, arr); }
+        arr.push(i);
+      }
+    });
+    const splits = edges.map(function () { return []; });
+    function addSplit(i, t, x, y) { splits[i].push({ t: t, x: x, y: y }); }
+    const seenPair = new Set();
+    const iEps = 1e-9;
+    buckets.forEach(function (arr) {
+      for (let n = 0; n < arr.length; n++) {
+        for (let m = n + 1; m < arr.length; m++) {
+          const i = arr[n], j = arr[m];
+          const pk = i < j ? i * 1e7 + j : j * 1e7 + i;
+          if (seenPair.has(pk)) continue;
+          seenPair.add(pk);
+          const e1 = edges[i], e2 = edges[j];
+          if (e1.a === e2.a || e1.a === e2.b || e1.b === e2.a || e1.b === e2.b) continue; // already joined
+          const sameGeom = (e1.a === e2.a && e1.b === e2.b) || (e1.a === e2.b && e1.b === e2.a);
+          if (sameGeom) continue; // identical duplicates: split identically via others
+          const r = segIntersect(e1, e2, verts);
+          if (!r) continue;
+          if (r.collinear) {
+            // weld the overlap endpoints that fall strictly inside an edge
+            for (const tt of [r.t3, r.t4]) {
+              if (tt > iEps && tt < 1 - iEps)
+                addSplit(i, tt, r.x1 + tt * r.dx1, r.y1 + tt * r.dy1);
+            }
+            for (const uu of [r.u1, r.u2]) {
+              if (uu > iEps && uu < 1 - iEps)
+                addSplit(j, uu, r.x2 + uu * r.dx2, r.y2 + uu * r.dy2);
+            }
+            continue;
+          }
+          const tIn = r.t > iEps && r.t < 1 - iEps;
+          const uIn = r.u > iEps && r.u < 1 - iEps;
+          if (tIn && uIn) { addSplit(i, r.t, r.x, r.y); addSplit(j, r.u, r.x, r.y); }
+          else if (tIn) addSplit(i, r.t, r.x, r.y); // e2's endpoint touches e1
+          else if (uIn) addSplit(j, r.u, r.x, r.y); // e1's endpoint touches e2
+          // endpoint-endpoint: already the same vertex via vid()
+        }
+      }
+    });
+
+    // Split every edge at its collected points, in order along the edge.
+    // Sub-edges fully outside the clip bounds are dropped.
+    const sub = [];
+    edges.forEach(function (e, i) {
+      const sp = splits[i];
+      if (!sp.length) {
+        const A0 = verts[e.a], B0 = verts[e.b];
+        if (inClip(A0) || inClip(B0)) {
+          const dx0 = B0.x - A0.x, dy0 = B0.y - A0.y;
+          sub.push({ a: e.a, b: e.b, layer: e.layer, kind: e.kind, pi: e.pi, sub: 0,
+                     len: Math.sqrt(dx0 * dx0 + dy0 * dy0) });
+        }
+        return;
+      }
+      sp.sort(function (p, q) { return p.t - q.t; });
+      const pts = [{ t: 0, v: e.a }];
+      sp.forEach(function (s) {
+        const last = pts[pts.length - 1];
+        if (Math.abs(s.t - last.t) < 1e-9) return;
+        const v = vid(s.x, s.y);
+        if (v === last.v) return;
+        pts.push({ t: s.t, v: v });
+      });
+      const last = pts[pts.length - 1];
+      if (last.v !== e.b && Math.abs(1 - last.t) >= 1e-9) pts.push({ t: 1, v: e.b });
+      else if (last.v !== e.b) last.t = 1;
+      for (let k = 0; k < pts.length - 1; k++) {
+        if (pts[k].v === pts[k + 1].v) continue;
+        const A = verts[pts[k].v], B = verts[pts[k + 1].v];
+        if (!inClip(A) && !inClip(B)) continue;
+        const dx = B.x - A.x, dy = B.y - A.y;
+        sub.push({ a: pts[k].v, b: pts[k + 1].v, layer: e.layer, kind: e.kind,
+                   pi: e.pi, sub: k, len: Math.sqrt(dx * dx + dy * dy) });
+      }
+    });
+
+    // Deterministic vertex order: sort by (y, x), remap, then sort edges.
+    const order = verts.map(function (v, i) { return i; })
+      .sort(function (a, b) { return verts[a].y - verts[b].y || verts[a].x - verts[b].x; });
+    const remap = new Array(verts.length);
+    const sverts = order.map(function (old, ni) { remap[old] = ni; return verts[old]; });
+    sub.forEach(function (e) { e.a = remap[e.a]; e.b = remap[e.b]; });
+    sub.sort(function (p, q) {
+      return p.layer - q.layer || p.a - q.a || p.b - q.b || p.sub - q.sub;
+    });
+
+    // Parents in first-appearance order; consumption/draw orders derived.
+    const pmap = new Map();
+    const parents = [];
+    sub.forEach(function (e) {
+      const k = e.layer + ":" + e.kind + ":" + e.pi;
+      let pi = pmap.get(k);
+      if (pi === undefined) { pi = parents.length; parents.push({ layer: e.layer, kind: e.kind, pi: e.pi }); pmap.set(k, pi); }
+      e.par = pi;
+    });
+    const byParent = parents.map(function () { return []; });
+    sub.forEach(function (e, i) { byParent[e.par].push(i); });
+    byParent.forEach(function (list) {
+      list.sort(function (a, b) { return sub[a].sub - sub[b].sub; });
+    });
+    // Parent centroids (mean of sub-edge midpoints, in graph coordinates):
+    // the motion wave keys each parent's delay to its position, so the
+    // lattice undulates coherently instead of shimmering at random.
+    parents.forEach(function (par, pi) {
+      const list = byParent[pi];
+      let sx = 0, sy = 0;
+      for (let li = 0; li < list.length; li++) {
+        const e = sub[list[li]];
+        const A = sverts[e.a], B = sverts[e.b];
+        sx += (A.x + B.x) * 0.5; sy += (A.y + B.y) * 0.5;
+      }
+      par.cx = list.length ? sx / list.length : 0;
+      par.cy = list.length ? sy / list.length : 0;
+    });
+    const consOrder = parents.map(function (p, i) { return i; }).sort(function (a, b) {
+      const A = parents[a], B = parents[b];
+      return A.layer - B.layer || KIND_ORD[A.kind] - KIND_ORD[B.kind] || A.pi - B.pi;
+    });
+    const drawOrder = parents.map(function (p, i) { return i; }).sort(function (a, b) {
+      const A = parents[a], B = parents[b];
+      return B.layer - A.layer || KD[A.kind] - KD[B.kind] || A.pi - B.pi;
+    });
+    return { verts: sverts, edges: sub, parents: parents, byParent: byParent,
+             drawOrder: drawOrder, consOrder: consOrder };
+  }
+
+  // Per-parent edge alpha. Every layer breathes gently (±8%) around a
+  // 0.45–0.85 tone base so no stroke ever dips near invisibility while
+  // sweeping through its motion. LAYER_DIM is [0.66,0.66,0.66]: all
+  // linework renders at 66% alpha.
+  function edgeAlpha(kind, layer, toneVal, m, pidx, phase) {
+    const salt = kind === "ring" ? 3 : kind === "spoke" ? 5 : 7;
+    const base = (0.45 + toneVal * 0.40) * (1 + 0.08 * osc(m.k, ephi(m.seed, pidx, salt), phase));
+    return base * LAYER_DIM[layer];
+  }
+
+  const graphCache = new Map();
+
+  function fusedGraph(tokenHash, S, mod, gridKey) {
+    gridKey = gridKey || "fusion";
+    const key = tokenHash + "|" + S + "|" + mod + "|rings|" + gridKey;
+    let G = graphCache.get(key);
+    if (G) return G;
+    const t = Traits.deriveTraits(tokenHash);
+    const geo = makeGeo(tokenHash, t, mod, S);
+    const m = S * 0.22;
+    const soups = [
+      layerSoup(tokenHash, mod, S, 0, gridPatch(mod, S, geoMargin(S)), geo),
+      layerSoup(tokenHash, mod, S, 1, gridPatch(mod, S, m), geo),
+      layerSoup(tokenHash, mod, S, 2, gridPatch(mod, S, m), geo),
+    ];
+    G = weldEdges(soups, mod, S, kindDrawFor(gridKey));
+    G.parBBox = parentBBoxes(G);
+    G.geo = geo;
+    if (graphCache.size > 48) graphCache.clear(); // bound memory: the gallery holds many tokens
+    graphCache.set(key, G);
+    return G;
+  }
+
+  // Per-parent bounding boxes, in graph coords. Used for sizing shard
+  // rotation.
+  function parentBBoxes(G) {
+    return G.parents.map(function (par, pi) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      const verts = G.verts, list = G.byParent[pi];
+      for (let i = 0; i < list.length; i++) {
+        const se = G.edges[list[i]];
+        const A = verts[se.a], B = verts[se.b];
+        if (A.x < x0) x0 = A.x; if (B.x < x0) x0 = B.x;
+        if (A.y < y0) y0 = A.y; if (B.y < y0) y0 = B.y;
+        if (A.x > x1) x1 = A.x; if (B.x > x1) x1 = B.x;
+        if (A.y > y1) y1 = A.y; if (B.y > y1) y1 = B.y;
+      }
+      return [x0, y0, x1, y1];
+    });
+  }
+
+  // Motion parameters drawn from their OWN domain stream ("motion"), so
+  // adding animation never shifts the structure/tone/accent streams. Drawn in
+  // a fixed order. These drive the gentle alpha breathing; the lattice's
+  // big motion is the wave system below, on its own "motion:wave*" streams.
+  function drawSys(s, ampMul) {
+    return { k: 1 + Math.floor(s() * 3), seed: s() * 100 };
+  }
+
+  // Builds one parent's path as a shard (used by rasterWelded). Each parent
+  // is one shard: when its wave envelope is 0 the path is drawn exactly in
+  // place (straight edges, identical to the static piece); mid-envelope the
+  // whole shard is rotated about its own centroid, stretched outward from
+  // it (k >= 1, seeded per shard), and translated outward, so the lattice
+  // lifts into flying, extending pieces and settles back into place as the
+  // wavefront passes. Because every shard's envelope is periodic in the
+  // loop phase, the animation loops seamlessly.
+  // Shard-local transform for one parent: rotate about its centroid by tr,
+  // stretch k about it, translate (dx, dy). Null when the shard is at rest
+  // (no transform) — points pass through unchanged.
+  function shardXform(par, tr) {
+    if (!tr) return null;
+    return { cx: par.cx, cy: par.cy, cos: tr.c, sin: tr.s, dx: tr.dx, dy: tr.dy, k: tr.k };
+  }
+  function xformPt(xf, x, y) {
+    if (!xf) return [x, y];
+    const ax = (x - xf.cx) * xf.k, ay = (y - xf.cy) * xf.k;
+    return [xf.cx + ax * xf.cos - ay * xf.sin + xf.dx,
+            xf.cy + ax * xf.sin + ay * xf.cos + xf.dy];
+  }
+  // Stippled linework: every edge becomes a row of dots — dot radius dotR,
+  // pitch center-to-center — placed at fixed fractions along the edge in the
+  // shard's local frame so the dots ride the wave without swimming. The
+  // dot COUNT per edge is derived from the un-stretched length (transformed
+  // length divided by the shard's stretch k), so it never changes mid-loop:
+  // no dots pop in or out as shards fly.
+  // All dots go into the current path; the caller fills once.
+  function stippleShardPath(ctx, G, par, list, shardXf, parIdx, dotR, pitch) {
+    const verts = G.verts, edges = G.edges;
+    const tr = shardXf[parIdx];
+    const xf = shardXform(par, tr);
+    const k = tr ? tr.k : 1;
+    for (let li = 0; li < list.length; li++) {
+      const e = edges[list[li]];
+      const A = verts[e.a], B = verts[e.b];
+      const p0 = xformPt(xf, A.x, A.y), p1 = xformPt(xf, B.x, B.y);
+      const dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+      const len = Math.sqrt(dx * dx + dy * dy) / k;
+      if (len < 1e-9) continue;
+      // len is in composition coords; the canvas draws at ZOOM×, and pitch
+      // is in canvas coords — scale up so the dot spacing matches.
+      const n = Math.max(1, Math.round(len * ZOOM / pitch));
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n;
+        const x = p0[0] + dx * t, y = p0[1] + dy * t;
+        ctx.moveTo(x + dotR, y);
+        ctx.arc(x, y, dotR, 0, TAU);
+      }
+    }
+  }
+
+  // Wash color bucket for one stipple dot: pure integer hash of the edge
+  // index and dot index — deterministic across frames, consumes no stream,
+  // so it can never shift the structure/tone/accent stream order.
+  function washPick(li, i, nHues) {
+    let h = ((li * 2654435761) ^ (i * 40503)) >>> 0;
+    h ^= h >>> 15; h = Math.imul(h, 2246822519) >>> 0; h ^= h >>> 13;
+    return h % nHues;
+  }
+
+  // Wash pass: the same walk as stippleShardPath, but only the dots
+  // assigned to color bucket wc, drawn at the wash radius. Same positions
+  // as the stipple, so the wash follows the linework exactly.
+  function washShardPath(ctx, G, par, list, shardXf, parIdx, washR, pitch, wc, nHues) {
+    const verts = G.verts, edges = G.edges;
+    const tr = shardXf[parIdx];
+    const xf = shardXform(par, tr);
+    const k = tr ? tr.k : 1;
+    for (let li = 0; li < list.length; li++) {
+      const e = edges[list[li]];
+      const A = verts[e.a], B = verts[e.b];
+      const p0 = xformPt(xf, A.x, A.y), p1 = xformPt(xf, B.x, B.y);
+      const dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+      const len = Math.sqrt(dx * dx + dy * dy) / k;
+      if (len < 1e-9) continue;
+      const n = Math.max(1, Math.round(len * ZOOM / pitch));
+      for (let i = 0; i < n; i++) {
+        if (washPick(li, i, nHues) !== wc) continue;
+        const t = (i + 0.5) / n;
+        const x = p0[0] + dx * t, y = p0[1] + dy * t;
+        ctx.moveTo(x + washR, y);
+        ctx.arc(x, y, washR, 0, TAU);
+      }
+    }
+  }
+
+  // Shared radial-wave flight: the accent dots ride the same outward wave
+  // as the shards. Pure math — no stream draws — so call sites keep their
+  // exact stream order.
+  function waveFlight(x, y, field, mu, trains, dly, uf, flyRange) {
+    const e = mu < 0 ? 0 : waveEnv(frac(mu * trains - dly));
+    const outFrac = (flyRange[0] + (flyRange[1] - flyRange[0]) * uf) * e;
+    return { x: x + (x - field.x) * outFrac, y: y + (y - field.y) * outFrac };
+  }
+
+  // Simulation: consumes all motion/tone/structure streams and computes the
+  // per-frame values that do not depend on canvas state.
+  // holdBox is the visible window [x0,y0,x1,y1]: the wave's amplitude damps
+  // to zero at the frame's edge, so linework crossing the frame keeps
+  // crossing it at every phase.
+  function weldedSim(G, tokenHash, geo, SU, phase, fieldRegion, holdBox) {
+    const mots = [];
+    const sM = SeedKit.streamFor(tokenHash, "motion");
+    const mLin = drawSys(sM, 2); drawSys(sM); drawSys(sM); drawSys(sM);
+    const sMT = SeedKit.streamFor(tokenHash, "motion:overlay");
+    drawSys(sMT); const mRing = drawSys(sMT, 1.5); drawSys(sMT); drawSys(sMT);
+    mots.push({ lin: mLin, ring: mRing });
+    ["dup30", "dup60"].forEach(function (tag) {
+      const s = SeedKit.streamFor(tokenHash, "motion:" + tag);
+      mots.push({ lin: drawSys(s, 2), ring: drawSys(s, 1.5) });
+    });
+
+    // Per-parent alpha, consumed in a fixed order per layer.
+    const toneStreams = [
+      SeedKit.streamFor(tokenHash, "tone"),
+      SeedKit.streamFor(tokenHash, "tone:dup30"),
+      SeedKit.streamFor(tokenHash, "tone:dup60"),
+    ];
+    const alpha = new Float64Array(G.parents.length);
+    G.consOrder.forEach(function (parIdx, ci) {
+      const par = G.parents[parIdx];
+      const m = (par.kind === "ring" || par.kind === "spoke") ? mots[par.layer].ring : mots[par.layer].lin;
+      let a = edgeAlpha(par.kind, par.layer, toneStreams[par.layer](), m, ci, phase);
+      // Ring fade: outer rings render fainter — ripples dissipate with
+      // distance — so dense multi-focus pieces keep their concentric
+      // legibility instead of collapsing into arc noise. A ring parent's
+      // pi is centerIdx*ringCount + j, so j = pi % ringCount; the
+      // innermost ring draws at full alpha, the outermost at 20%.
+      if (par.kind === "ring") {
+        const j = par.pi % geo.ringCount;
+        a *= 1 - 0.8 * (j / Math.max(1, geo.ringCount - 1));
+      }
+      // Spokes are fine detail: render them subordinate to the rings so the
+      // concentric architecture stays the hero of the piece.
+      if (par.kind === "spoke") a *= 0.55;
+      // Ring-field balance: the rings coincide across all three layers
+      // (3x overdraw on every arc plus wash accumulation), so the circular
+      // field reads much brighter than the single-drawn linear grids.
+      // RING_DIM rebalances the two — 1.0 is the original ring-dominant
+      // look, lower values hand the piece back to the grids.
+      if (par.kind === "ring" || par.kind === "spoke") a *= RING_DIM;
+      alpha[parIdx] = a;
+    });
+
+    // Wave system: one shard per parent. Params come from their own domain
+    // streams ("motion:wave*"), drawn in the same fixed consOrder. Each
+    // shard lifts as its wavefront passes (with a seeded direction jitter),
+    // twists out and back about its own centroid (seeded direction, max
+    // ~120°, unwound before the wave finishes so it glides home straight
+    // with no snap), stretches outward from that centroid (seeded amount,
+    // scaled by the envelope), and waits its turn on a radial delay from
+    // the nearest ring center — the wave radiates outward from every focus
+    // and the lattice settles in the same order.
+    const field = waveField(geo.centers, fieldRegion);
+    const waveStreams = [
+      SeedKit.streamFor(tokenHash, "motion:wave"),
+      SeedKit.streamFor(tokenHash, "motion:wave:dup30"),
+      SeedKit.streamFor(tokenHash, "motion:wave:dup60"),
+    ];
+    const shardXf = new Array(G.parents.length);
+    const mu = motionMu(phase); // -1 at rest: every shard transform is null
+    const trains = geo.trains;
+    // Nearest focus per point: the wave radiates outward from every ring
+    // center, so each shard's flight direction keys on its own nearest
+    // focus (the same one its delay keys on), not the field's center of
+    // mass — the displacement field stays concentric about every focus.
+    function nearestFocus(x, y) {
+      let bx = field.centers[0].x, by = field.centers[0].y, bd = Infinity;
+      for (let fi = 0; fi < field.centers.length; fi++) {
+        const fc = field.centers[fi];
+        const fdx = x - fc.x, fdy = y - fc.y, fd = fdx * fdx + fdy * fdy;
+        if (fd < bd) { bd = fd; bx = fc.x; by = fc.y; }
+      }
+      return { x: bx, y: by };
+    }
+    G.consOrder.forEach(function (parIdx) {
+      const par = G.parents[parIdx];
+      const sS = waveStreams[par.layer];
+      const u1 = sS(), u2 = sS(), u3 = sS(), u4 = sS(), u5 = sS();
+      const nf = nearestFocus(par.cx, par.cy);
+      const dx0 = par.cx - nf.x, dy0 = par.cy - nf.y;
+      const ang = Math.atan2(dy0, dx0) + (u2 - 0.5) * 1.4;
+      const mag = SU * (0.02 + 0.11 * u1) * 0.67; // flight: 0.0134–0.0871·SU
+      const dir = u3 < 0.5 ? -1 : 1; // seeded spin direction
+      const stretch = 0.15 + 0.45 * u5; // shard grows 1.15–1.60x at envelope peak
+      // Radial delay, bounded by WAVE_DMAX (0.20/1.12) so delay + envelope
+      // active zone (0.80) <= 1 per train: every shard finishes settling
+      // exactly as the motion window closes, and at rest all local clocks
+      // sit in the forced rest zone (static piece intact).
+      const delay = waveDelay(field, par.cx, par.cy, u4);
+      const x = mu < 0 ? 0 : frac(mu * trains - delay); // the shard's local clock
+      const e = mu < 0 ? 0 : waveEnv(x);
+      // Frame hold: the envelope is scaled by the shard's hold weight, so
+      // shards near the frame's edge stay pinned to their rest geometry and
+      // the linework keeps bleeding past the frame at every phase. The
+      // shard stays rigid — the whole transform simply shrinks toward rest.
+      const holdW = holdWeight(par.cx, par.cy, holdBox, SU);
+      const we = e * holdW;
+      // Full-turn spin: eases from 0 to SPIN_TURNS seeded-direction turns
+      // over the spin window, then holds — the shard lands exactly where
+      // it started (a full turn ≡ 0°), so the transform releases with no
+      // snap. Deliberately not scaled by the hold weight: only whole turns
+      // are seamless at release.
+      const spin = dir * TAU * SPIN_TURNS * spinProg(x);
+      shardXf[parIdx] = we === 0 ? null : {
+        c: Math.cos(spin), s: Math.sin(spin),
+        dx: Math.cos(ang) * mag * we, dy: Math.sin(ang) * mag * we,
+        k: 1 + stretch * we,
+      };
+    });
+
+    return { mots: mots, alpha: alpha, shardXf: shardXf, field: field,
+             trains: trains };
+  }
+
+  // Raster: draws the welded linework.
+  function rasterWelded(ctx, sim, G, SU, strokeW, phase, washColors) {
+    const mots = sim.mots, alpha = sim.alpha;
+    const shardXf = sim.shardXf;
+    const verts = G.verts, edges = G.edges, parents = G.parents;
+    const drawOrder = G.drawOrder, byParent = G.byParent;
+    line(ctx, Math.max(0.5, strokeW));
+    // Stipple geometry from the line width: dots of diameter
+    // STIPPLE_DOT × strokeW, spaced STIPPLE_PITCH × strokeW.
+    const dotR = Math.max(0.5, strokeW) * STIPPLE_DOT / 2;
+    const pitch = Math.max(0.5, strokeW) * STIPPLE_PITCH;
+    const washR = dotR * WASH_R_MULT;
+    const nHues = washColors.length;
+
+    // Stroke every parent's sub-edges. Dim layers first, base layer last;
+    // within each layer the stroke order follows the grid trait — ring
+    // field under the linear grid, or inverted (grid under ring field).
+    // Each parent first lays its hue wash (one batched fill per hue color,
+    // under the per-parent tone alpha), then its stippled linework on top.
+    //
+    // Hot path: plain for-loops; each shard's transform is computed once
+    // per parent in the sim, so the raster is just rotate+translate math.
+    // Two passes: all hue washes first, then all stippled linework. The
+    // wash is a background glow — it must sit under every parent's
+    // linework, not just its own. (Interleaving wash/stipple per parent
+    // lets a later parent's wash dim an earlier parent's stipple.)
+    for (let di = 0; di < drawOrder.length; di++) {
+      const parIdx = drawOrder[di];
+      const par = parents[parIdx];
+      const list = byParent[parIdx];
+      if (!list.length) continue;
+      for (let wc = 0; wc < nHues; wc++) {
+        ctx.fillStyle = washColors[wc];
+        ctx.globalAlpha = alpha[parIdx] * WASH_ALPHA;
+        ctx.beginPath();
+        washShardPath(ctx, G, par, list, shardXf, parIdx, washR, pitch, wc, nHues);
+        // Defensive: pureimage's fill can choke on certain path geometries
+        // (observed with token 20's wash). If the fill fails, skip this
+        // wash layer — the stipples and dots still render.
+        try { ctx.fill(); } catch (e) { /* skip wash */ }
+      }
+    }
+    for (let di = 0; di < drawOrder.length; di++) {
+      const parIdx = drawOrder[di];
+      const par = parents[parIdx];
+      const list = byParent[parIdx];
+      if (!list.length) continue;
+      ctx.fillStyle = LAYER_TINT[par.layer];
+      ctx.globalAlpha = alpha[parIdx];
+      ctx.beginPath();
+      stippleShardPath(ctx, G, par, list, shardXf, parIdx, dotR, pitch);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // The visible window in composition coords: the zoom is a ctx transform,
+  // so the wave normalizes to what the viewer actually sees.
+  function visibleRegion(S) {
+    const r = S / (2 * ZOOM);
+    return [S / 2 - r, S / 2 - r, S / 2 + r, S / 2 + r];
+  }
+
+  // Frame-hold weight for one point (a shard centroid or dot) against the
+  // visible window box. 0 at the frame's edge — linework anchored there
+  // keeps bleeding past the frame at every phase — ramping smoothly to 1
+  // over EDGE_HOLD·S inside, so there is no visible pinned/moving seam.
+  // Shards are weighted by centroid, not bbox: a long grid line stays wild
+  // in the interior even while its far end holds the frame.
+  function holdWeight(x, y, box, S) {
+    if (!box) return 1;
+    if (x < box[0] || x > box[2] || y < box[1] || y > box[3]) return 0;
+    const d = Math.min(x - box[0], box[2] - x, y - box[1], box[3] - y);
+    if (d <= 0) return 0;
+    const f = EDGE_HOLD * S;
+    return d >= f ? 1 : sstep(0, f, d);
+  }
+
+  function drawWelded(ctx, S, G, unit, P, geo, tokenHash, phase) {
+    const region = visibleRegion(S);
+    const sim = weldedSim(G, tokenHash, geo, S, phase, region, region);
+    rasterWelded(ctx, sim, G, S, S / 1240, phase, P.accents);
+  }
+
+  // --- Accent layer: the four dot rings -----------------------------------
+  // Every piece carries an inner ring of ACCENT_DOTS dots, an outer
+  // ring of up to ACCENT_DOTS_OUTER dots, and two middle rings of up to
+  // ACCENT_DOTS_MID1 and ACCENT_DOTS_MID2 dots — 99 per piece, all inside the
+  // visible frame. The dot-grid trait picks which
+  // vertex set they sit on: "square" (the linear grid's square-grid
+  // vertices — the original behavior), "triangle" (interior third-points
+  // of each module), or "circle" (ring/spoke crossing points). The inner
+  // ring takes the ACCENT_DOTS candidates nearest the piece center, the
+  // outer ring the ACCENT_DOTS_OUTER candidates nearest the frame edge,
+  // and the two middle rings the next-farthest unoccupied candidates
+  // (each ring claiming only what the earlier rings left).
+  // at the same size; colors come from the piece's hue set. As a wavefront
+  // passes, each dot rides the same radial wave as the shards around it —
+  // flying outward from the nearest ring center (a seeded fraction of its
+  // radial distance, so they never overshoot). The accent layer keeps full
+  // visibility through the whole motion — the dots fly without dissolving,
+  // and settle back as the lattice reconfigures.
+  // Square-grid vertices of the linear grid: a welded vertex qualifies when
+  // some layer has two perpendicular axis-aligned incident edges, measured
+  // in that layer's own rotated frame. Ring arcs and spokes sit at other
+  // angles and never qualify (a ring arc is axis-aligned only at its
+  // cardinal tangent, where it meets a grid vertex that already qualifies),
+  // so the set is exactly the square grid's intersections.
+  function squareGridVertSet(G, angles) {
+    const set = new Set();
+    const n = G.verts.length;
+    const bits = new Uint8Array(n * 3); // per vertex per layer: 1 = axis-u, 2 = axis-v
+    const cosA = angles.map(function (a) { return Math.cos(a); });
+    const sinA = angles.map(function (a) { return Math.sin(a); });
+    for (let ei = 0; ei < G.edges.length; ei++) {
+      const e = G.edges[ei];
+      const L = e.layer;
+      const A = G.verts[e.a], B = G.verts[e.b];
+      const dx = B.x - A.x, dy = B.y - A.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len === 0) continue;
+      const au = Math.abs((dx * cosA[L] + dy * sinA[L]) / len);
+      const av = Math.abs((-dx * sinA[L] + dy * cosA[L]) / len);
+      let bit = 0;
+      if (au > 0.99999) bit = 1;
+      else if (av > 0.99999) bit = 2;
+      if (bit) { bits[e.a * 3 + L] |= bit; bits[e.b * 3 + L] |= bit; }
+    }
+    for (let i = 0; i < n; i++)
+      for (let L = 0; L < 3; L++)
+        if ((bits[i * 3 + L] & 3) === 3) { set.add(i); break; }
+    return set;
+  }
+
+  // Circle-vertex set: every welded vertex where a ring edge and a spoke
+  // edge meet — the ring/spoke crossing points of the ring lattice. The
+  // weld splits each spoke at every ring crossing, so every crossing is a
+  // vertex carrying sub-edges of both kinds. Any layer counts: rings
+  // coincide across layers while the spoke fans rotate, so each layer
+  // contributes its own crossings. The focus hubs carry spokes but no
+  // rings, so they never qualify — the set is strictly the intersections.
+  function circleVertSet(G) {
+    const set = new Set();
+    const n = G.verts.length;
+    const hasRing = new Uint8Array(n), hasSpoke = new Uint8Array(n);
+    for (let ei = 0; ei < G.edges.length; ei++) {
+      const e = G.edges[ei];
+      if (e.kind === "ring") { hasRing[e.a] = 1; hasRing[e.b] = 1; }
+      else if (e.kind === "spoke") { hasSpoke[e.a] = 1; hasSpoke[e.b] = 1; }
+    }
+    for (let i = 0; i < n; i++)
+      if (hasRing[i] && hasSpoke[i]) set.add(i);
+    return set;
+  }
+
+  // Triangle-vertex points: the interior third-points of every module in the
+  // base layer's frame — (i + a/3)·mod × (j + b/3)·mod for a,b in {1,2} —
+  // rotated into canvas coords with the same rotation the layer soup uses.
+  // The tidal engine has no triangle field of its own (v1's was replaced by
+  // the ring field), so this is the honest "triangle lattice" reading of
+  // the module system: the vertices a triangulated module adds beyond its
+  // corners, in v1's TRI_SUBDIV=3 language. Base-layer frame only, keeping
+  // the set crisp and legible. Returns [{x, y, id}] with stable synthetic
+  // ids (these are computed points, not graph vertices).
+  function triangleVertPoints(mod, S, region, margin) {
+    const ang = LAYER_ANGLES[0];
+    const cosA = Math.cos(ang), sinA = Math.sin(ang);
+    const cx = S / 2, cy = S / 2;
+    const rx0 = region[0] - margin, ry0 = region[1] - margin;
+    const rx1 = region[2] + margin, ry1 = region[3] + margin;
+    const pts = [];
+    const i1 = Math.ceil(S / mod) + 2;
+    for (let i = -2; i <= i1; i++)
+      for (let j = -2; j <= i1; j++)
+        for (let a = 1; a <= 2; a++)
+          for (let b = 1; b <= 2; b++) {
+            const px = (i + a / 3) * mod, py = (j + b / 3) * mod;
+            const dx = px - cx, dy = py - cy;
+            const x = cx + dx * cosA - dy * sinA;
+            const y = cy + dx * sinA + dy * cosA;
+            if (x < rx0 || x > rx1 || y < ry0 || y > ry1) continue;
+            pts.push({ x: x, y: y,
+                       id: ((i + 16) * 64 + (j + 16)) * 4 + (a - 1) * 2 + (b - 1) });
+          }
+    return pts;
+  }
+
+  // Simulation: consumes the accent-dot streams and computes per-dot
+  // placement, color, and wave flight (the accent layer keeps full
+  // visibility through the motion). gridRegion is [x0, y0, x1, y1]: the
+  // square path passes the visible window; its center anchors the ring and
+  // a dot-radius margin keeps every dot on-canvas. angles is the per-layer
+  // rotation table (LAYER_ANGLES). The dot-grid trait (geo.dotGrid) picks
+  // the placement set — "square" (linear-grid intersections),
+  // "triangle" (module third-points), or "circle" (ring/spoke crossings).
+  // The inner ring is the ACCENT_DOTS candidates nearest the region center
+  // and the outer ring is the ACCENT_DOTS_OUTER candidates farthest from
+  // it, so every dot sits exactly on its trait's vertex set.
+  function dotsSim(G, P, geo, tokenHash, SU, unit, phase, gridRegion, fieldRegion, angles) {
+    if (!P.accents.length) return null;
+    const sM = SeedKit.streamFor(tokenHash, "motion:accent-dots");
+    const k = 1 + Math.floor(sM() * 2), seed = sM() * 100;
+    const field = waveField(geo.centers, fieldRegion);
+    const mu = motionMu(phase); // -1 at rest: no flight, dots on their vertices
+    const verts = G.verts;
+    const cx = (gridRegion[0] + gridRegion[2]) / 2, cy = (gridRegion[1] + gridRegion[3]) / 2;
+    const margin = unit; // dots may kiss the region edge
+    const rx0 = gridRegion[0] - margin, ry0 = gridRegion[1] - margin;
+    const rx1 = gridRegion[2] + margin, ry1 = gridRegion[3] + margin;
+    // Candidate set by dot-grid trait. The square branch is byte-for-byte
+    // the original selection (same set, same order, same stream draws), so
+    // existing square renders are unchanged. Triangle candidates carry
+    // explicit x/y plus a stable synthetic id; circle/square candidates
+    // reference graph vertices by index.
+    const dg = geo.dotGrid || "square";
+    const cand = [];
+    if (dg === "triangle") {
+      const pts = triangleVertPoints(unit * 3, SU, gridRegion, margin);
+      for (let pi = 0; pi < pts.length; pi++) {
+        const p = pts[pi];
+        const dx = p.x - cx, dy = p.y - cy;
+        cand.push({ i: p.id, d2: dx * dx + dy * dy, x: p.x, y: p.y });
+      }
+    } else {
+      const vset = dg === "circle" ? circleVertSet(G)
+                                   : squareGridVertSet(G, angles || LAYER_ANGLES);
+      for (let i = 0; i < verts.length; i++) {
+        if (!vset.has(i)) continue;
+        const vx = verts[i].x, vy = verts[i].y;
+        if (vx < rx0 || vx > rx1 || vy < ry0 || vy > ry1) continue;
+        const dx = vx - cx, dy = vy - cy;
+        cand.push({ i: i, d2: dx * dx + dy * dy });
+      }
+    }
+    // The rings: nearest-to-center first, id breaking ties so the
+    // selection is deterministic down to float-identical distances.
+    cand.sort(function (a, b) { return a.d2 - b.d2 || a.i - b.i; });
+    if (dg === "circle") {
+      // The weld leaves near-duplicate vertices where the rotated spoke
+      // fans cross the same ring: without this, the nearest/farthest
+      // picks collapse into sub-pixel clumps that read as a single dot.
+      // Greedy nearest-first pass keeps the first of each clump (at least
+      // unit apart), so the two rings spread as visibly separate dots.
+      const kept = [];
+      const minSep2 = unit * unit;
+      for (let ci = 0; ci < cand.length; ci++) {
+        const c = cand[ci];
+        const vx = (c.x !== undefined) ? c.x : verts[c.i].x;
+        const vy = (c.x !== undefined) ? c.y : verts[c.i].y;
+        let clash = false;
+        for (let ki = 0; ki < kept.length; ki++) {
+          const kx = (kept[ki].x !== undefined) ? kept[ki].x : verts[kept[ki].i].x;
+          const ky = (kept[ki].x !== undefined) ? kept[ki].y : verts[kept[ki].i].y;
+          const dx = vx - kx, dy = vy - ky;
+          if (dx * dx + dy * dy < minSep2) { clash = true; break; }
+        }
+        if (!clash) kept.push(c);
+      }
+      cand.length = 0;
+      for (let ki = 0; ki < kept.length; ki++) cand.push(kept[ki]);
+    }
+    // The inner ring takes the ACCENT_DOTS nearest candidates; the outer
+    // ring takes the ACCENT_DOTS_OUTER farthest, and the two middle rings
+    // the next-farthest — each skipping candidates the earlier rings
+    // already claimed so the four rings never share a dot.
+    cand.sort(function (a, b) { return a.d2 - b.d2 || a.i - b.i; });
+    const dots = [];
+    const used = new Set();
+    function pushDot(c, ring) {
+      const vx = (c.x !== undefined) ? c.x : verts[c.i].x;
+      const vy = (c.x !== undefined) ? c.y : verts[c.i].y;
+      const uf = sM(); // per-dot outward-flight jitter
+      // Neon field: each dot's color is a hash trait — cyrb53 of the token
+      // hash plus the dot's vertex index — so the color is a deterministic
+      // property of that dot, not a sequential stream draw. The token's
+      // hue set is reserved for the linework wash.
+      const colorIdx = SeedKit.cyrb53(tokenHash + "::dotcolor::" + c.i) % NEON_DOT_COLORS.length;
+      const color = NEON_DOT_COLORS[colorIdx];
+      const dly = waveDelay(field, vx, vy, ephi(seed, c.i, 13));
+      // Outward wave: the same radial wave as the shards — the dot flies
+      // outward from its nearest focus with the lattice, at full
+      // visibility (no dissolve).
+      let bx = field.centers[0].x, by = field.centers[0].y, bd = Infinity;
+      for (let fi = 0; fi < field.centers.length; fi++) {
+        const fc = field.centers[fi];
+        const fdx = vx - fc.x, fdy = vy - fc.y, fd = fdx * fdx + fdy * fdy;
+        if (fd < bd) { bd = fd; bx = fc.x; by = fc.y; }
+      }
+      const fp = waveFlight(vx, vy, { x: bx, y: by }, mu, geo.trains, dly, uf, DOT_OUTWARD);
+      // Radial blink: 0.5s fade cycle, running only during 2s-4.5s of the
+      // 8s loop (shortened 0.5s). All dots stay fully on during the rests.
+      // The fade is a smooth sine in/out — no hard on/off pop.
+      // Blink phase advances with the dot's angle around the composition
+      // center — even rings clockwise, odd rings counterclockwise — so
+      // the fade sweeps around each ring in alternating directions.
+      const tSec = phase * 8;
+      let alpha = 1.0;
+      if (tSec >= 2.0 && tSec < 4.5) {
+        const theta = Math.atan2(vy - cy, vx - cx) / TAU; // -0.5..0.5
+        let blinkT = ((tSec - 2.0) * 2 + (ring % 2 === 0 ? theta : -theta)) % 1;
+        if (blinkT < 0) blinkT += 1;
+        alpha = Math.sin(blinkT * Math.PI); // 0..1..0 smooth fade
+      }
+      dots.push({ x: fp.x, y: fp.y, color: color, alpha: alpha });
+      used.add(c.i);
+    }
+    // The inner ring: 12 dots arranged evenly around the center. Bin the
+    // candidates into 12 30° angular sectors; take the nearest-to-center
+    // candidate in each sector. This guarantees an even radial arrangement
+    // every time, not a clump of the nearest vertices.
+    const bins = [];
+    for (let b = 0; b < ACCENT_DOTS; b++) bins.push(null);
+    for (let m = 0; m < cand.length; m++) {
+      const c = cand[m];
+      const vx = (c.x !== undefined) ? c.x : verts[c.i].x;
+      const vy = (c.x !== undefined) ? c.y : verts[c.i].y;
+      const ang = Math.atan2(vy - cy, vx - cx); // -PI..PI
+      const bin = Math.floor(((ang + Math.PI) / TAU) * ACCENT_DOTS) % ACCENT_DOTS;
+      if (!bins[bin] || c.d2 < bins[bin].d2) bins[bin] = c;
+    }
+    for (let b = 0; b < ACCENT_DOTS; b++) {
+      if (bins[b]) pushDot(bins[b], 0);
+    }
+    // Outer ring: farthest-from-center first, same deterministic tie-break.
+    // Two additional middle rings follow, taking the next-farthest
+    // unoccupied vertices, so all four rings sit on distinct vertices.
+    // Stream draws happen after the inner ring's, so the inner ring's
+    // flight is byte-identical with or without the outer rings.
+    cand.sort(function (a, b) { return b.d2 - a.d2 || a.i - b.i; });
+    const ringCounts = [ACCENT_DOTS_OUTER, ACCENT_DOTS_MID1, ACCENT_DOTS_MID2];
+    for (let r = 0; r < ringCounts.length; r++) {
+      let placed = 0;
+      for (let m = 0; m < cand.length && placed < ringCounts[r]; m++) {
+        if (used.has(cand[m].i)) continue;
+        pushDot(cand[m], r + 1);
+        placed++;
+      }
+    }
+    return { dots: dots, k: k, seed: seed };
+  }
+
+  // Raster: draws the accent dots. Dots are pinned to vertices and keep
+  // full visibility through the motion. Abyss dots carry a smaller bone
+  // center at the same center and CENTER_ALPHA times the parent's alpha,
+  // so the dark knockout reads against the linework; colored dots draw
+  // plain.
+  function rasterDots(ctx, sim, dotUnit, strokeW) {
+    if (!sim) return;
+    line(ctx, Math.max(0.5, strokeW));
+    const r0 = dotUnit * 0.12;
+    const rad = r0 * DOT_SIZE;
+    const radC = rad * DOT_CENTER;
+    function paintDot(x, y, color, alpha) {
+      ctx.fillStyle = color;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(x, y, rad, 0, TAU);
+      ctx.fill();
+      // Grey core: every accent dot carries the medium cool grey core, so
+      // the neon reads as a ring with a grey center; the grey core itself
+      // gets a small near-black pinprick at its heart.
+      ctx.fillStyle = DOT_GREY;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(x, y, radC, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = DOT_CORE;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(x, y, radC * DOT_INNER, 0, TAU);
+      ctx.fill();
+    }
+    for (let i = 0; i < sim.dots.length; i++) {
+      const d = sim.dots[i];
+      if (d.alpha <= 0.01) continue; // fully faded out
+      paintDot(d.x, d.y, d.color, 0.9 * d.alpha);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawAccentDots(ctx, S, G, unit, P, geo, tokenHash, phase) {
+    if (!P.accents.length) return;
+    const region = visibleRegion(S); // the ring centers on what the viewer sees
+    const sim = dotsSim(G, P, geo, tokenHash, S, unit, phase, region, region, LAYER_ANGLES);
+    rasterDots(ctx, sim, unit, S / 1240);
+  }
+
+  // layers: optional preloaded decks from TGLayers.loadLayers(), keyed by
+  // grid-system key. Composited beneath the procedural linework as depth
+  // fields, so the seeded geometry stays legible on top of the textures.
+  // phase: loop phase in [0, 1). All motion is periodic in phase, so
+  // frame(1) === frame(0) and the animation loops seamlessly. Defaults to 0,
+  // which renders the static piece.
+  function streamsFor(tokenHash, sys) {
+    const sfx = sys === "linear" ? "" : ":overlay";
+    return {
+      sStruct: SeedKit.streamFor(tokenHash, "structure" + sfx),
+      sTone: SeedKit.streamFor(tokenHash, "tone" + sfx),
+      sAccent: SeedKit.streamFor(tokenHash, "accent-detail" + sfx),
+      sMotion: SeedKit.streamFor(tokenHash, "motion" + sfx),
+    };
+  }
+
+  // Palette supplies bg/ink/wash; the Accent Hue trait supplies the dot
+  // grid's color set as HTML hex, overriding the palette default.
+  function makePalette(t) {
+    const P = Object.assign({}, PALETTES[t.palette] || PALETTES.abyssal);
+    P.accents = t.hue.map(function (k) { return HUE_COLORS[k]; }).filter(Boolean);
+    return P;
+  }
+
+  function render(ctx, S, tokenHash, layers, phase) {
+    phase = phase || 0;
+    const t = Traits.deriveTraits(tokenHash);
+    const P = makePalette(t);
+    const systems = Traits.compositeFor(t.grid);
+
+    ctx.save();
+    ctx.fillStyle = P.bg;
+    ctx.fillRect(0, 0, S, S);
+    // Zoom the whole composition about the locked pivot (the frame center);
+    // the frame crops it.
+    const pv = pivot(S);
+    ctx.translate(pv.x, pv.y);
+    ctx.scale(ZOOM, ZOOM);
+    ctx.translate(-pv.x, -pv.y);
+    // The locked-in global rotation: the whole composition turns about the
+    // pivot as a single rigid body; the frame crops the rotated field.
+    ctx.translate(pv.x, pv.y);
+    ctx.rotate(GLOBAL_ROT_CW);
+    ctx.translate(-pv.x, -pv.y);
+    // One shared lattice module per layer: source geometry is built on
+    // the same module system before rotation, so the linear grids are
+    // perfect squares in every layer. The ring field welds to the linear
+    // grid at every crossing (rings sit at seeded lattice radii about
+    // grid-snapped foci).
+    const mods = DENSITY_MODULES[t.density] || DENSITY_MODULES.standard;
+    const mod = S / mods;
+    const geo = makeGeo(tokenHash, t, mod, S);
+    for (const sys of systems) {
+      const R = streamsFor(tokenHash, sys);
+      // Each system's depth field sits beneath the linework.
+      if (Layers && layers) Layers.composeLayers(ctx, S, layers[sys], R, tokenHash, P, phase, sys === "linear" ? "" : sys);
+    }
+    // The welded tri-layer ring lattice, then the accent dot grid above it.
+    const G = fusedGraph(tokenHash, S, mod, t.grid);
+    drawWelded(ctx, S, G, mod / 3, P, geo, tokenHash, phase);
+    drawAccentDots(ctx, S, G, mod / 3, P, geo, tokenHash, phase);
+    ctx.restore();
+    // No border: the welded linework bleeds uninterrupted to the canvas edge.
+    return t;
+  }
+
+  const TGArt = { PALETTES: PALETTES, HUE_COLORS: HUE_COLORS, render: render,
+    DENSITY_MODULES: DENSITY_MODULES, DENSITY_RINGS: DENSITY_RINGS,
+    RING_SEG: RING_SEG, RING_FIT_MARGIN: RING_FIT_MARGIN,
+    ACCENT_DOTS: ACCENT_DOTS, ACCENT_DOTS_OUTER: ACCENT_DOTS_OUTER, ACCENT_DOTS_MID1: ACCENT_DOTS_MID1, ACCENT_DOTS_MID2: ACCENT_DOTS_MID2, NEON_DOT_COLORS: NEON_DOT_COLORS, DOT_SIZE: DOT_SIZE, DOT_CENTER: DOT_CENTER,
+    DOT_OUTWARD: DOT_OUTWARD, EDGE_HOLD: EDGE_HOLD,
+    BONE: BONE,
+    CENTER_ALPHA: CENTER_ALPHA,
+    LAYER_ANGLES: LAYER_ANGLES, LAYER_DIM: LAYER_DIM, LAYER_TINT: LAYER_TINT,
+    ORIENT_CW: ORIENT_CW, _pivot: pivot,
+    ZOOM: ZOOM, GLOBAL_ROT_CW: GLOBAL_ROT_CW, WAVE_DMAX: WAVE_DMAX,
+    fusedGraph: fusedGraph, _weldEdges: weldEdges, _edgeAlpha: edgeAlpha,
+    _waveEnv: waveEnv, _waveField: waveField, _waveDelay: waveDelay,
+    _ringCenters: ringCenters, _makeGeo: makeGeo,
+    _latticeRadii: latticeRadii, _spokeAngleSet: spokeAngleSet,
+    _motionMu: motionMu, _dotsSim: dotsSim, _squareGridVertSet: squareGridVertSet,
+    _circleVertSet: circleVertSet, _triangleVertPoints: triangleVertPoints, _weldedSim: weldedSim,
+    _holdWeight: holdWeight, _spinProg: spinProg, SPIN_TURNS: SPIN_TURNS, SPIN_WINDOW: SPIN_WINDOW,
+    _waveFlight: waveFlight,
+    _layerSoup: function (tokenHash, mod, S, layer) {
+      const t = Traits.deriveTraits(tokenHash);
+      const geo = makeGeo(tokenHash, t, mod, S);
+      const m = S * 0.22;
+      return layerSoup(tokenHash, mod, S, layer, gridPatch(mod, S, layer === 0 ? geoMargin(S) : m), geo);
+    } };
+
+  if (typeof module !== "undefined" && module.exports) module.exports = TGArt;
+  else global.TGArt = TGArt;
+})(typeof self !== "undefined" ? self : this);
+</script>
+<script>
+/* Turning Geometries — volumetric renderer, JavaScript port.
+ *
+ * Faithful port of src/volumetric/volumetric.py (the approved 720p look:
+ * 11.25° pinhole orbit, vertical mirror, 180° final rotation, sunset
+ * palette, 1.62x fitted zoom, (Turning: spindles removed, shells backgrounded),
+ * fibonacci wave-shell dots, nested accent web, 42%-alpha accent discs,
+ * 0.9px final blur).
+ *
+ * Differences from the Python renderer, by necessity:
+ *  - RNG: Python used numpy PCG64 via sha256 seeds; here domain-separated
+ *    sfc32 streams via SeedKit (cyrb53). Same distributions (uniform /
+ *    gaussian), different draws — the statistical look is identical, the
+ *    exact wash/spindle constellations differ per token.
+ *  - Time-based animation (requestAnimationFrame) instead of fixed 240
+ *    frames; the motion functions are continuous in loop phase so any
+ *    framerate renders the same trajectory.
+ *  - Wash overlays are drawn per-point with globalAlpha instead of one
+ *    accumulated RGBA overlay; visually equivalent at these alphas.
+ *
+ * Self-contained: derive everything from the token hash through the 2D
+ * engine (SeedKit / TGTraits / TGArt), exactly like dump_geo.js does.
+ */
+(function (global) {
+  "use strict";
+
+  var TAU = Math.PI * 2;
+  var CAM_EL = 78.75 * Math.PI / 180; // camera elevation. Post-v1 delta 2026-10-28 (Calvin: "adjust camera to look down onto the center of the triangle"): was -11.25° (below center level, the fold plane nearly edge-on); now +78.75° — the mirror tilt from above, 11.25° off straight-down, so the triangle reads face-on while the orbit basis stays sound (exactly 90° would put the forward vector parallel to the world z axis the basis is built from).
+  var MIRROR_Z = true;                 // vertical mirror about z = CV[2]
+  var ROT180 = true;                   // rotate the final frame 180°
+  var ROT_CW30 = Math.PI / 6;          // post-v2 delta 2026-10-29 (Calvin): rotate the ENTIRE composition 30° clockwise — applied to the projected coordinates in computeFrame (so fitView fits the rotated frame and the points stay crisp), on top of the ROT180 composite
+  var CAM_DIST = 14.4; // scaled with the outermost overlay (3.6 at 1x, 7.2 at 2x, 14.4 at 4x, 28.8 at 8x). Post-v1 deltas 2026-10-26: layers halved to 1x + 2x (7.2), then the 4x layer brought back (14.4)
+  // (BLUR softening constant removed 2026-10-24 — no blur pass.)
+  var FOLD_R = 1.0;
+  var TRI_PHI = Math.PI / 2; // the shared triangle orientation: one vertex up (foci, shells, fold core)
+  var FOLD_AMP = 0.85 * Math.PI;
+  var SHELL_BG = 1.0; // Turning delta 2026-10-24: shells in the background (0.18); post-v1 2026-10-25 (Calvin): 0.36 -> 0.54 steady -> MAX 1.0, full gradient color
+  var DUST_GAIN = 1.15; // post-v2 delta 2026-10-29 (Calvin): dust brightness +15% across all layers — multiplies the layer-ramp colors in buildPointCloud (draw clamps each channel at 1)
+  var POINT_TOTAL = 144000; // post-v2 delta 2026-10-29 (Calvin): rendered point count LOCKED series-wide — every token builds exactly this many points (see the shell allocation in buildPointCloud)
+  var LOOP_S = 16, BREATH_S = 8;
+  var SPEED = 0.5333333333333333; // pace history: 0.5, raised 23% to 0.615 on 2026-10-28 (loop 26.02s), set to 0.9142857142857143 on 2026-10-29 for a 7-minute full cycle; post-v2 delta 2026-10-29 (Calvin): slowed so the full 24-loop overlay cycle spans exactly 12 minutes — each fold loop is 30s of wall time (16 / 0.5333333333333333 = 30; 24 x 30 = 720s)
+
+  var FAM = { SHELL: 0, PLANE: 1, STAR: 2, WASH: 3, CORE: 4, COREH: 5 };
+
+  function hexrgb(h) {
+    h = h.replace("#", "");
+    return [parseInt(h.slice(0, 2), 16) / 255,
+            parseInt(h.slice(2, 4), 16) / 255,
+            parseInt(h.slice(4, 6), 16) / 255];
+  }
+  function lerp3(a, b, t) {
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  }
+
+  // The 8-stop SUNLIGHT ramp (post-v1 delta 2026-10-28, Calvin:
+  // "lets go back to the sunlight pallette" — the sea ramp of
+  // 2026-10-27 is replaced by the engine's original sunset
+  // family, ordered bright -> dark: the v1 shell gradient's ends
+  // (#ffd98f -> #8e2f6e), its DOT_RAMP sequence, and the heart
+  // gold #ffd166). Spanned across the layers by brightness —
+  // brightest interior to darkest exterior, static (the color
+  // cycle that ran through it in deltas 42-44 was removed
+  // 2026-10-28 at Calvin's direction).
+  var SUN_RAMP_RGB = ["#ffd98f", "#ffd166", "#ffcf6e", "#ff9e4a",
+                      "#ff6e5e", "#e84f9e", "#9a5fd0", "#8e2f6e"].map(hexrgb);
+
+
+  // Render palette: series-locked to Sunset. It was a byte-7
+  // trait until 2026-10-28, when Calvin removed every trait
+  // other than grid and density; the palette was single-option
+  // (weight 100) anyway — midnight was auditioned 2026-10-24
+  // and reverted the same day — so the renderer now simply
+  // always uses "sunset".
+
+  var PALETTES = {
+    sunset: {
+      // Palette key stays "sunset" (trait plumbing); the dust's real
+      // colors come from the layer-brightness SUN_RAMP in
+      // buildPointCloud. SHELL_IN is only the build-time
+      // placeholder color. The midnight palette and the lattice /
+      // dot-ramp / web / core / wash fields were removed in the
+      // 2026-10-27 cleanup — nothing referenced them anymore.
+      SHELL_IN: hexrgb("#ffd98f")
+    }
+  };
+
+  // deterministic [0,1) from hash + domain parts — EXACT mirror of py h01:
+  // first byte of SHA-256("::".join(parts)) / 255
+  var SHA256_K = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b,
+    0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be,
+    0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1,
+    0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc,
+    0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3,
+    0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+    0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1,
+    0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585,
+    0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3,
+    0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814,
+    0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+  function sha256bytes(str) {
+    var bytes = [], i;
+    for (i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i);
+      // input is ASCII (hex hash + domain labels), so 1 byte/char
+      bytes.push(c & 0xff);
+    }
+    var bitLen = bytes.length * 8;
+    bytes.push(0x80);
+    while (bytes.length % 64 !== 56) bytes.push(0);
+    for (i = 7; i >= 0; i--) bytes.push((bitLen / Math.pow(2, i * 8)) & 0xff);
+    var h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a,
+        h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+    var w = new Array(64);
+    for (var b = 0; b < bytes.length; b += 64) {
+      for (i = 0; i < 16; i++)
+        w[i] = (bytes[b + i * 4] << 24) | (bytes[b + i * 4 + 1] << 16) |
+               (bytes[b + i * 4 + 2] << 8) | bytes[b + i * 4 + 3];
+      for (i = 16; i < 64; i++) {
+        var s0 = ((w[i - 15] >>> 7) | (w[i - 15] << 25)) ^
+                 ((w[i - 15] >>> 18) | (w[i - 15] << 14)) ^ (w[i - 15] >>> 3);
+        var s1 = ((w[i - 2] >>> 17) | (w[i - 2] << 15)) ^
+                 ((w[i - 2] >>> 19) | (w[i - 2] << 13)) ^ (w[i - 2] >>> 10);
+        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+      }
+      var a = h0, bb = h1, cc = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+      for (i = 0; i < 64; i++) {
+        var S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+        var ch = (e & f) ^ (~e & g);
+        var t1 = (h + S1 + ch + SHA256_K[i] + w[i]) | 0;
+        var S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+        var mj = (a & bb) ^ (a & cc) ^ (bb & cc);
+        var t2 = (S0 + mj) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = cc; cc = bb; bb = a; a = (t1 + t2) | 0;
+      }
+      h0 = (h0 + a) | 0; h1 = (h1 + bb) | 0; h2 = (h2 + cc) | 0; h3 = (h3 + d) | 0;
+      h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + h) | 0;
+    }
+    return [h0, h1, h2, h3, h4, h5, h6, h7];
+  }
+  function h01(hash, parts) {
+    var digest = sha256bytes(hash + "::" + parts.join("::"));
+    return (digest[0] >>> 24) / 255;
+  }
+
+
+  // ---- geo from the 2D engine (mirrors dump_geo.js) -----------------------
+  // geoFromHash takes a token hash hex string directly (on-chain path:
+  // the contract injects tokenData.hash). geoFromToken is the demo path.
+  function geoFromHash(tokenHash) {
+    var S = 720;
+    var t = TGTraits.deriveTraits(tokenHash);
+    var mod = S / (TGArt.DENSITY_MODULES[t.density] || TGArt.DENSITY_MODULES.standard);
+    var geo = TGArt._makeGeo(tokenHash, t, mod, S);
+    var G = TGArt.fusedGraph(tokenHash, S, mod, t.grid);
+    var r = S / (2 * TGArt.ZOOM);
+    var region = [S / 2 - r, S / 2 - r, S / 2 + r, S / 2 + r];
+    var sim = TGArt._dotsSim(G, { accents: [1] }, geo, tokenHash, S, mod / 3, 0,
+                             region, region, TGArt.LAYER_ANGLES);
+    return {
+      hash: tokenHash, S: S, mod: mod,
+      traits: { density: t.density, rings: t.rings, grid: t.grid },
+      foci: (geo.centersAll || geo.centers).map(function (c) { return { x: c.x, y: c.y }; }), // 3 foci (post-v1, Calvin)
+      radii: geo.radii.map(function (o) { return { r: o.r }; }),
+      dots: sim.dots.map(function (d) { return { x: d.x, y: d.y, color: d.color }; }),
+      layerAngles: TGArt.LAYER_ANGLES.slice(),
+      dotRings: [TGArt.ACCENT_DOTS, TGArt.ACCENT_DOTS_OUTER,
+                 TGArt.ACCENT_DOTS_MID1, TGArt.ACCENT_DOTS_MID2]
+    };
+  }
+
+  function geoFromToken(tokenId) {
+    return geoFromHash(SeedKit.demoMintHash(tokenId));
+  }
+
+  // Geometry traits (added 2026-10-28, Calvin): the variables
+  // that actually differ between tokens, read off the built
+  // geometry — Radii (the token's shell radii, world units),
+  // Scale (RMAX, the largest radius) and Point (points in the
+  // rendered composition). (A Shell count trait was removed
+  // 2026-10-29 — it was a series constant, 180.) Unlike the seed
+  // traits in traits.js these are
+  // computed from the geometry itself, so they live here, next
+  // to the build that produces them.
+  function geometryTraits(geo, cloud) {
+    var uscale = 2.0 / geo.S;
+    var radii = geo.radii.map(function (o) { return (o.r * uscale).toFixed(3); });
+    return [
+      { trait_type: "Radii", value: radii.join(" · ") },
+      { trait_type: "Scale", value: cloud.RMAX.toFixed(3) },
+      { trait_type: "Point", value: cloud.n }
+    ];
+  }
+
+  function fibSphere(n) {
+    var out = new Float32Array(n * 3);
+    for (var i = 0; i < n; i++) {
+      var y = 1 - 2 * (i + 0.5) / n;
+      var r = Math.sqrt(Math.max(0, 1 - y * y));
+      var phi = i * 2.399963229728653;
+      out[i * 3] = r * Math.cos(phi);
+      out[i * 3 + 1] = r * Math.sin(phi);
+      out[i * 3 + 2] = y;
+    }
+    return out;
+  }
+
+  // ---- point cloud ---------------------------------------------------------
+  // SoA typed arrays; per-point aux slots (dist / ax,ay,az / ring / ang /
+  // cdir / cphase) are zero for families that don't use them.
+  // 33 accent-dot tint/shade variants from the watery sea range
+  // (post-v1 delta 2026-10-26, Calvin): 11 hues sweeping teal
+  // (172 deg) to deep blue (214 deg), each at 3 lightness levels —
+  // tint 0.80 / mid 0.62 / shade 0.44, saturation 0.72. Index =
+  // hue * 3 + lightness level. Each of the 99 original dots is dealt
+  // variant (index % 33), so every variant appears exactly 3 times
+  // per field; copies, scales, and mirror twins inherit it.
+  // (The 33 accent-dot sea variants and their hsl helper went with
+  // the dots in the 2026-10-27 cleanup.)
+
+  function buildPointCloud(hash, geo, paletteName) {
+    // paletteName=null/undefined -> the series-locked "sunset"
+    var pname = paletteName || "sunset";
+    var pal = PALETTES[pname];
+    var S = geo.S, USCALE = 2.0 / S;
+    function ux(x) { return x * USCALE - 1.0; }
+    function uy(y) { return 1.0 - y * USCALE; }
+
+    var P = [], C = [], FAMa = [], DIST = [], AX = [], AY = [], AZ = [],
+        GFa = [];
+
+    // Post-v1 delta 2026-10-28 (Calvin: BOTH): the concentric
+    // circles become triangles — (1) the dust shells are triangular
+    // instead of spherical, and (2) the fold's core track is a
+    // triangle instead of a circle. Shared geometry: a regular
+    // triangle of circumradius 1 with a vertex at TRI_PHI (up,
+    // aligned with the foci triangle). triRadial(th) is its
+    // boundary radius at angle th: 1 at the vertices, 0.5 (the
+    // apothem) at the edge midpoints.
+    function triRadial(th) {
+      var u = (th - TRI_PHI) % (TAU / 3);
+      if (u < 0) u += TAU / 3;
+      return 0.5 / Math.cos(u - Math.PI / 3);
+    }
+
+    function pushPt(x, y, z, col, fam, aux) {
+      P.push(x, y, z); C.push(col[0], col[1], col[2]); FAMa.push(fam);
+      DIST.push(aux && aux.dist || 0);
+      AX.push(aux && aux.ax || 0); AY.push(aux && aux.ay || 0); AZ.push(aux && aux.az || 0);
+      GFa.push(aux && aux.gf || 0);   // shell-radius fraction (layer-band color pass)
+    }
+
+    // Foci: arranged in an equilateral TRIANGLE (post-v1 delta
+    // 2026-10-28, Calvin — supersedes the 2026-10-25 all-center
+    // lock: with the mirror gone a downward cleft remained, and the
+    // single central focus was its anchor). Circumradius = half
+    // the token's largest shell radius, one vertex up, in the fold
+    // plane (z = 0), centered on the origin — the centroid CV
+    // stays [0,0,0], while the three shell systems interpenetrate
+    // and pull the composition off its single circular axis. (The
+    // seeded positions remain in the 2D geometry/traits only.)
+    var radii = geo.radii.map(function (o) { return o.r * USCALE; });
+    var RMAX = Math.max.apply(null, radii);
+    var TRI_R = 0.5 * RMAX;
+    var foci = [0, 1, 2].map(function (k) {
+      var a = Math.PI / 2 + k * TAU / 3;
+      return [TRI_R * Math.cos(a), TRI_R * Math.sin(a), 0];
+    });
+    // CV = centroid of ALL foci (the triangle's center).
+    var CV = [0, 0, 0];
+    foci.forEach(function (F) { CV[0] += F[0]; CV[1] += F[1]; CV[2] += F[2]; });
+    CV = [CV[0] / foci.length, CV[1] / foci.length, CV[2] / foci.length];
+
+    // Shell build colors are placeholders — the layer-brightness
+    // ramp pass at the end of this build assigns every shell point
+    // its real color. (The old per-shell two-stop gradient was
+    // superseded by the ramp in the 2026-10-27 cleanup.)
+    var shellCols = radii.map(function () { return pal.SHELL_IN; });
+
+    // Point lock (post-v2 delta 2026-10-29, Calvin): the
+    // rendered total is locked at POINT_TOTAL for every token.
+    // The composition multiplies one focus system by 3 foci x
+    // 5 layers x 2 twins = 30, so each focus system must hold
+    // exactly POINT_TOTAL / 30 = 4,800 points. The shells keep
+    // the established density law (250 + 650*(R/RMAX)^2 per
+    // shell) as weights, rescaled to the 4,800 budget by
+    // largest-remainder rounding so the per-shell counts sum
+    // exactly, deterministically, for any radii set.
+    var perSystem = POINT_TOTAL / 30;
+    var rawW = radii.map(function (R) { return 250 + 650 * Math.pow(R / RMAX, 2); });
+    var rawSum = rawW.reduce(function (a, b) { return a + b; }, 0);
+    var shellN = rawW.map(function (w) { return Math.floor(w * perSystem / rawSum); });
+    var remPts = perSystem - shellN.reduce(function (a, b) { return a + b; }, 0);
+    rawW.map(function (w, i) { return { i: i, f: w * perSystem / rawSum - shellN[i] }; })
+      .sort(function (a, b) { return (b.f - a.f) || (a.i - b.i); })
+      .slice(0, remPts)
+      .forEach(function (o) { shellN[o.i] += 1; });
+
+    // shells: fibonacci spheres per focus per ring radius
+    var seenFoci = {};
+    for (var fi = 0; fi < foci.length; fi++) {
+      var F = foci[fi];
+      // Coincident foci share ONE shell system (point-identical
+      // systems would otherwise be built once per focus — under
+      // the triangle arrangement the three foci are distinct, so
+      // each builds its own system).
+      var fkey = F[0].toFixed(6) + "," + F[1].toFixed(6) + "," + F[2].toFixed(6);
+      if (seenFoci[fkey]) continue;
+      seenFoci[fkey] = 1;
+      for (var si = 0; si < radii.length; si++) {
+        var R = radii[si];
+        // Per-shell count from the locked allocation above
+        // (density-law weights rescaled to the 4,800-point
+        // per-system budget; sums exactly for every token).
+        var n = shellN[si];
+        var sph = fibSphere(n);
+        for (var i = 0; i < n; i++) {
+          var dx = sph[i * 3], dy = sph[i * 3 + 1], dz = sph[i * 3 + 2];
+          // Triangular shells (delta above): the unit direction's
+          // XY radius is scaled by the triangle's boundary radius
+          // at its angle, so each spherical shell becomes a
+          // triangular shell (triangular cross-section in the fold
+          // plane, pinched at the poles where the XY radius -> 0).
+          // The wave-push direction follows the deformed surface.
+          var tf = triRadial(Math.atan2(dy, dx));
+          var vx = dx * tf, vy = dy * tf, vz = dz;
+          var vl = Math.hypot(vx, vy, vz) || 1;
+          var sc = shellCols[si];
+          pushPt(F[0] + R * vx, F[1] + R * vy, F[2] + R * vz,
+                 [sc[0] * SHELL_BG, sc[1] * SHELL_BG, sc[2] * SHELL_BG],
+                 FAM.SHELL, { dist: R, ax: vx / vl, ay: vy / vl, az: vz / vl,
+                              gf: radii.length > 1 ? si / (radii.length - 1) : 0 });
+        }
+      }
+    }
+    var shellCount = P.length / 3; // SHELL points occupy [0, shellCount)
+
+    // PLANE lattice: not built into the volumetric cloud (removed
+    // 2026-10-25 — it was hidden at draw since the v1 lock; the 2D
+    // geometry keeps its lattice). Its dead grid computation was
+    // dropped in the 2026-10-27 cleanup.
+
+    // star originals: hash dots + golden-angle fillers. The dots
+    // themselves are NOT built into the cloud (removed 2026-10-26);
+    // their positions are still needed for the web pair sets below.
+    var sx0 = [], sr0 = [];
+    geo.dots.forEach(function (d, k) {
+      var ring = k < 12 ? 0 : k < 33 ? 1 : k < 66 ? 2 : 3;
+      sx0.push([ux(d.x), uy(d.y), (h01(hash, ["star3d", String(k)]) - 0.5) * 0.9]);
+      sr0.push(ring);
+    });
+    var designed = geo.dotRings;
+    for (var _r = 0; _r < 4; _r++) {
+      var have = [];
+      for (var _i = 0; _i < sx0.length; _i++) if (sr0[_i] === _r) have.push(_i);
+      var want = _r < designed.length ? designed[_r] : 0;
+      var short = want - have.length;
+      if (!have.length || short <= 0) continue;
+      var rad = 0;
+      have.forEach(function (i) { rad += Math.hypot(sx0[i][0], sx0[i][1]); });
+      rad /= have.length;
+      for (var _j = 0; _j < short; _j++) {
+        var _ang = _j * 2.399963;
+        var _rr = rad * (0.94 + 0.12 * (((_j * 5) % 7) / 6));
+        var _x = Math.cos(_ang) * _rr, _y = Math.sin(_ang) * _rr;
+        sx0.push([_x, _y, (((_j * 0.618034) % 1) - 0.5) * 0.9]);
+        sr0.push(_r);
+      }
+    }
+    var nStar0 = sx0.length;
+    var starBlockStart = P.length / 3;
+    // Accent dots were removed from the cloud 2026-10-26 (Calvin)
+    // and the audio/sequencer followed the same day; the dot-point
+    // build and its blink machinery were dropped in the 2026-10-27
+    // cleanup. The originals above remain only as the web pair
+    // sets' source geometry. nStar is therefore always 0.
+    var rotsAll = [0, -30 * Math.PI / 180, -60 * Math.PI / 180];
+    var nStar = 0;
+    // Post-v1 deltas 2026-10-25 (Calvin): duplicate the composition and
+    // overlay it enlarged so the original fits neatly inside it — first
+    // at 2x, then another overlay of both at 4x, then at 8x: four
+    // nested scales (1x / 2x / 4x / 8x). The copies are the same
+    // SHELL + STAR points scaled
+    // about the central vertex CV (PLANE lattice dust is hidden at draw
+    // and is not duplicated). Star copies are spliced in directly after
+    // the existing star block so the block stays contiguous; shell
+    // copies are appended at the end. DUP maps each copy point to its
+    // original and SCL holds its scale: computeFrame derives copy
+    // positions from the folded originals, so the nesting stays exact
+    // through the fold, not just at rest.
+    var DUP_SCALES = [Math.SQRT2, 2.0, 2 * Math.SQRT2, 4.0];
+    // Layer ladder: was [2,4,8], halved to [2], 4x restored -> [2,4].
+    // Post-v1 delta 2026-10-26 (Calvin): add enlarged layers fitting
+    // EQUALLY between the existing ones, center to outermost — the
+    // existing ladder doubles, so equal fit = geometric midpoints:
+    // scales 1 / sqrt2 / 2 / 2sqrt2 / 4, a steady x1.414 step.
+    var DUP = [], SCL = [];
+    (function buildDuplicates() {
+      var total0 = P.length / 3;
+      for (var i = 0; i < total0; i++) { DUP.push(-1); SCL.push(1); }
+      function copyInto(from, count, at, scale) {
+        var segs = [
+          [P, 3], [C, 3], [FAMa, 1], [DIST, 1], [AX, 1], [AY, 1], [AZ, 1],
+          [GFa, 1]
+        ];
+        segs.forEach(function (sg) {
+          var arr = sg[0], comps = sg[1], seg = new Array(count * comps);
+          for (var q = from; q < from + count; q++)
+            for (var c = 0; c < comps; c++) {
+              var v = arr[q * comps + c];
+              if (arr === P) v = CV[c] + (v - CV[c]) * scale;
+              seg[(q - from) * comps + c] = v;
+            }
+          arr.splice.apply(arr, [at * comps, 0].concat(seg));
+        });
+        var dupSeg = [], sclSeg = [];
+        for (var q2 = from; q2 < from + count; q2++) { dupSeg.push(q2); sclSeg.push(scale); }
+        DUP.splice.apply(DUP, [at, 0].concat(dupSeg));
+        SCL.splice.apply(SCL, [at, 0].concat(sclSeg));
+      }
+      DUP_SCALES.forEach(function (scale, gen) {
+        // shells: append copies of the ORIGINALS at the end
+        copyInto(0, shellCount, P.length / 3, scale);
+      });
+    })();
+    // accent web: 24 nearest neighbors per star, nested 3/6/9/12/24 pair sets
+    var sb = starBlockStart;
+    var pairs3 = {}, pairs6 = {}, pairs9 = {}, pairs12 = {}, pairs24 = {};
+    // The web pair sets are computed from a VIRTUAL star block (the
+    // original dot positions: 3 rotated fields x the nested scales
+    // about CV) — the dots themselves are not in the cloud, but the
+    // dormant linework keeps its exact pairs.
+    var webBase = [], webOff = 0, webN = nStar0 * 3, webTotal = webN * (DUP_SCALES.length + 1);
+    var vScales = [1].concat(DUP_SCALES);
+    for (var vg = 0; vg < vScales.length; vg++) {
+      for (var vr = 0; vr < rotsAll.length; vr++) {
+        var ca2 = Math.cos(rotsAll[vr]), sa2 = Math.sin(rotsAll[vr]);
+        for (var vi = 0; vi < nStar0; vi++) {
+          var vx = ca2 * sx0[vi][0] - sa2 * sx0[vi][1], vy = sa2 * sx0[vi][0] + ca2 * sx0[vi][1];
+          webBase.push(CV[0] + (vx - CV[0]) * vScales[vg],
+                       CV[1] + (vy - CV[1]) * vScales[vg],
+                       CV[2] + (sx0[vi][2] - CV[2]) * vScales[vg]);
+        }
+      }
+    }
+    var order = new Array(webTotal);
+    for (var _s = 0; _s < webTotal; _s++) order[_s] = _s;
+    // Pairs are collected within each copy separately, so the enlarged
+    // overlay's web is an exact scaled replica of the original's web.
+    function collectPairs(off) {
+      for (var _a2 = off; _a2 < off + webN; _a2++) {
+        var axp = webBase[(webOff + _a2) * 3], ayp = webBase[(webOff + _a2) * 3 + 1], azp = webBase[(webOff + _a2) * 3 + 2];
+        var idx = order.slice(off, off + webN);
+        idx.sort(function (p, q) {
+          var dxp = webBase[(webOff + p) * 3] - axp, dyp = webBase[(webOff + p) * 3 + 1] - ayp, dzp = webBase[(webOff + p) * 3 + 2] - azp;
+          var dxq = webBase[(webOff + q) * 3] - axp, dyq = webBase[(webOff + q) * 3 + 1] - ayp, dzq = webBase[(webOff + q) * 3 + 2] - azp;
+          return (dxp * dxp + dyp * dyp + dzp * dzp) - (dxq * dxq + dyq * dyq + dzq * dzq);
+        });
+        // idx[0] is self (dist 0); neighbors are idx[1..24]
+        for (var _kk = 1; _kk <= 24 && _kk < idx.length; _kk++) {
+          var _p = _a2 < idx[_kk] ? _a2 : idx[_kk], _q = _a2 < idx[_kk] ? idx[_kk] : _a2;
+          var key = _p + ":" + _q;
+          pairs24[key] = 1;
+          if (_kk <= 12) pairs12[key] = 1;
+          if (_kk <= 9) pairs9[key] = 1;
+          if (_kk <= 6) pairs6[key] = 1;
+          if (_kk <= 3) pairs3[key] = 1;
+        }
+      }
+    }
+    for (var _cp = 0; _cp <= DUP_SCALES.length; _cp++) collectPairs(_cp * webN);
+    function pairArr(o) {
+      return Object.keys(o).map(function (k) {
+        var s = k.split(":");
+        return [parseInt(s[0], 10), parseInt(s[1], 10)];
+      });
+    }
+
+    // Duplicated composition overlay (post-v1 delta 2026-10-28,
+    // Calvin): every point built so far (originals + enlarged
+    // copies) gains a twin. computeFrame derives each twin's
+    // position from its source's final position rotated about
+    // the z axis through CV — a half-turn overlay at base.
+    // Twins inherit their source's color through the color
+    // block below (srcI = TWIN[ci]). (Earlier the same day this
+    // slot held a vertical mirror, then a counter-rotating
+    // duplicate; Calvin simplified it to the static 180°
+    // overlay and took the camera turn out with it. Post-v2
+    // delta 2026-10-29: the overlay angle is stepped — see
+    // computeFrame / drawFrame.)
+    var TWIN = [];
+    for (var mi = 0, miN = P.length / 3; mi < miN; mi++) TWIN.push(-1);
+    (function buildTwins() {
+      var n0 = P.length / 3;
+      var segs = [
+        [P, 3], [C, 3], [FAMa, 1], [DIST, 1], [AX, 1], [AY, 1], [AZ, 1],
+        [GFa, 1]
+      ];
+      segs.forEach(function (sg) {
+        var arr = sg[0], comps = sg[1];
+        for (var q = 0; q < n0; q++)
+          for (var c = 0; c < comps; c++) arr.push(arr[q * comps + c]);
+      });
+      for (var mt = 0; mt < n0; mt++) { TWIN.push(mt); DUP.push(-1); SCL.push(1); }
+    })();
+
+    // (Wash points and core spindles were removed in the Turning
+    // fork, 2026-10-24; their legacy range markers went in the
+    // 2026-10-27 cleanup.)
+
+    // Post-v1 delta 2026-10-27 (Calvin): MORE tints, spanned
+    // across EVERY LAYER by order of brightness — an 8-stop ramp
+    // is laid over the layer ladder: the 1x layer takes the
+    // brightest band, each enlarged layer the next band down, the
+    // 4x layer the darkest. A point's place within its band is its
+    // shell-radius fraction (GF), so the ramp runs continuously
+    // from the brightest center tint to the darkest rim. (This
+    // replaces the per-shell SHELL_IN -> SHELL_OUT gradient as the
+    // dust's effective coloring. The ramp was the sea family
+    // 2026-10-27..28; SUNLIGHT since delta 44, 2026-10-28.)
+    var RAMP8 = SUN_RAMP_RGB;
+    function rampAt(t) {
+      var x = Math.min(0.99999, Math.max(0, t)) * (RAMP8.length - 1);
+      var i0 = Math.floor(x);
+      return lerp3(RAMP8[i0], RAMP8[i0 + 1], x - i0);
+    }
+    var numGens = DUP_SCALES.length + 1, total0c = TWIN.length;
+    for (var ci = 0; ci < FAMa.length; ci++) {
+      if (FAMa[ci] !== FAM.SHELL) continue;
+      var srcI = ci < total0c ? ci : TWIN[ci];
+      var gen = Math.min(numGens - 1, Math.floor(srcI / shellCount));
+      var rc = rampAt((gen + GFa[ci]) / numGens);
+      var gain = SHELL_BG * DUST_GAIN;
+      C[ci * 3] = rc[0] * gain; C[ci * 3 + 1] = rc[1] * gain; C[ci * 3 + 2] = rc[2] * gain;
+    }
+
+    var nPts = P.length / 3;
+    var cloud = {
+      P: new Float32Array(P), C: new Float32Array(C), FAM: new Uint8Array(FAMa),
+      DIST: new Float32Array(DIST), AX: new Float32Array(AX),
+      AY: new Float32Array(AY), AZ: new Float32Array(AZ),
+      n: nPts, CV: CV, RMAX: RMAX, hash: hash,
+      shells: radii.length * foci.length * (DUP_SCALES.length + 1) * 2,
+      palette: pal, paletteName: pname,
+      starBlock: sb, nStar: nStar,
+      DUP: new Int32Array(DUP), SCL: new Float32Array(SCL),
+      TWIN: new Int32Array(TWIN),
+      web: { p3: pairArr(pairs3), p6: pairArr(pairs6), p9: pairArr(pairs9),
+             p12: pairArr(pairs12), p24: pairArr(pairs24) },
+      geo: geo
+    };
+
+    // Fold rigging — the core track is now a TRIANGLE (post-v1
+    // delta 2026-10-28, Calvin: both circles -> triangles): each
+    // point's anchor q sits on the triangle of circumradius
+    // FOLD_R (same orientation as the shells and foci) along the
+    // point's own angle from CV, and the fold rotates the point
+    // around the triangle EDGE's tangent at q — constant within
+    // each edge's sector, turning at the vertices — instead of
+    // around a circle's tangent.
+    var FQ = new Float32Array(nPts * 3), FD = new Float32Array(nPts * 3),
+        FCX = new Float32Array(nPts * 3), FTX = new Float32Array(nPts),
+        FTY = new Float32Array(nPts), FSDOT = new Float32Array(nPts);
+    for (var q = 0; q < nPts; q++) {
+      var rx = cloud.P[q * 3] - CV[0], ry = cloud.P[q * 3 + 1] - CV[1];
+      var rrq = Math.hypot(rx, ry);
+      var fam = cloud.FAM[q];
+      var onAxis = rrq < 1e-4 || fam === FAM.CORE || fam === FAM.COREH;
+      if (onAxis) {
+        FQ[q * 3] = cloud.P[q * 3]; FQ[q * 3 + 1] = cloud.P[q * 3 + 1]; FQ[q * 3 + 2] = cloud.P[q * 3 + 2];
+        continue;
+      }
+      var th = Math.atan2(ry, rx);
+      var trr = FOLD_R * triRadial(th);
+      var qx = CV[0] + trr * Math.cos(th), qy = CV[1] + trr * Math.sin(th);
+      var dx = cloud.P[q * 3] - qx, dy = cloud.P[q * 3 + 1] - qy, dz = cloud.P[q * 3 + 2] - CV[2];
+      var sec = Math.floor((((th - TRI_PHI) % TAU) + TAU) % TAU / (TAU / 3));
+      var va = TRI_PHI + sec * TAU / 3, vb = va + TAU / 3;
+      var tx = Math.cos(vb) - Math.cos(va), ty = Math.sin(vb) - Math.sin(va);
+      var tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+      FQ[q * 3] = qx; FQ[q * 3 + 1] = qy; FQ[q * 3 + 2] = CV[2];
+      FD[q * 3] = dx; FD[q * 3 + 1] = dy; FD[q * 3 + 2] = dz;
+      FCX[q * 3] = ty * dz; FCX[q * 3 + 1] = -tx * dz; FCX[q * 3 + 2] = tx * dy - ty * dx;
+      FTX[q] = tx; FTY[q] = ty; FSDOT[q] = tx * dx + ty * dy;
+    }
+    cloud.FQ = FQ; cloud.FD = FD; cloud.FCX = FCX;
+    cloud.FTX = FTX; cloud.FTY = FTY; cloud.FSDOT = FSDOT;
+    return cloud;
+  }
+
+  // ---- per-frame computation ------------------------------------------------
+  function wavePush(dist, p, RMAX) {
+    var tri = p < 0.5 ? p * 2 : 2 - p * 2;
+    var W = RMAX * tri;
+    var d = (dist - W) / 0.22;
+    return Math.exp(-(d * d));
+  }
+
+  function camBasis(cloud, lp) {
+    // Camera turn REMOVED 2026-10-28 at Calvin's direction: the
+    // azimuth is fixed at th = 0 — the camera keeps its +78.75°
+    // top-down elevation, aimed at CV, and no longer orbits
+    // through the loop. (lp remains in the signature; callers
+    // are unchanged.) The fold and breath still animate.
+    var th = 0;
+    var ce = Math.cos(CAM_EL), se = Math.sin(CAM_EL);
+    var CV = cloud.CV;
+    var cx = CV[0] + CAM_DIST * ce * Math.cos(th),
+        cy = CV[1] + CAM_DIST * ce * Math.sin(th),
+        cz = CV[2] + CAM_DIST * se;
+    var fx = CV[0] - cx, fy = CV[1] - cy, fz = CV[2] - cz;
+    var fl = Math.hypot(fx, fy, fz); fx /= fl; fy /= fl; fz /= fl;
+    // right = fwd x (0,0,1)
+    var rx = fy * 1 - fz * 0, ry = fz * 0 - fx * 1, rz = fx * 0 - fy * 0;
+    rx = fy; ry = -fx; rz = 0;
+    var rl = Math.hypot(rx, ry, rz) || 1; rx /= rl; ry /= rl; rz /= rl;
+    // up = right x fwd
+    var ux = ry * fz - rz * fy, uy = rz * fx - rx * fz, uz = rx * fy - ry * fx;
+    return { r: [rx, ry, rz], u: [ux, uy, uz], f: [fx, fy, fz], c: [cx, cy, cz] };
+  }
+
+  function project3(px, py, pz, b, out, o) {
+    var dx = px - b.c[0], dy = py - b.c[1], dz = pz - b.c[2];
+    var depth = dx * b.f[0] + dy * b.f[1] + dz * b.f[2];
+    if (depth < 0.25) depth = 0.25;
+    out[o] = (dx * b.r[0] + dy * b.r[1] + dz * b.r[2]) / depth;
+    out[o + 1] = (dx * b.u[0] + dy * b.u[1] + dz * b.u[2]) / depth;
+    out[o + 2] = depth;
+  }
+
+  function computeFrame(cloud, lp, ovAngle) {
+    var n = cloud.n, CV = cloud.CV, RMAX = cloud.RMAX;
+    // Overlay angle for the twin derivation below (post-v2 delta
+    // 2026-10-29): defaults to the plain half-turn; drawFrame
+    // passes pi + the stepped offset (ease 30° across one loop,
+    // hold one loop, repeating — a full overlay turn in 24
+    // loops), fitView samples the whole turn.
+    if (ovAngle === undefined) ovAngle = Math.PI;
+    var ovc = Math.cos(ovAngle), ovs = Math.sin(ovAngle);
+    var wp = ((lp * LOOP_S) % BREATH_S) / BREATH_S;
+    if (wp < 0) wp += 1;
+    // Post-v1 delta 2026-10-25 (Calvin): continuous one-direction fold —
+    // one full poloidal turn per 16s loop at a constant rate, instead of
+    // the v1 in-and-out swing (FOLD_AMP * sin). A full 2π turn is the
+    // identity at the loop seam, so the loop stays seamless.
+    var fa = TAU * lp;
+    var fc = Math.cos(fa), fs = Math.sin(fa), fk = 1 - fc;
+    var F = cloud._fr || (cloud._fr = {
+      pos: new Float32Array(n * 3), bright: new Float32Array(n),
+      sx: new Float32Array(n), sy: new Float32Array(n), sz: new Float32Array(n),
+    });
+    var pos = F.pos, bright = F.bright;
+    var P = cloud.P, FQ = cloud.FQ, FD = cloud.FD, FCX = cloud.FCX,
+        FTX = cloud.FTX, FTY = cloud.FTY, FSDOT = cloud.FSDOT;
+    for (var i = 0; i < n; i++) {
+      var i3 = i * 3;
+      pos[i3] = FQ[i3] + FD[i3] * fc + FCX[i3] * fs + FTX[i] * FSDOT[i] * fk;
+      pos[i3 + 1] = FQ[i3 + 1] + FD[i3 + 1] * fc + FCX[i3 + 1] * fs + FTY[i] * FSDOT[i] * fk;
+      pos[i3 + 2] = FQ[i3 + 2] + FD[i3 + 2] * fc + FCX[i3 + 2] * fs;
+      bright[i] = 1;
+    }
+    // Enlarged duplicate overlay: copy points take their position from
+    // their folded original, scaled about CV — the original stays nested
+    // exactly inside the enlarged copy at every point of the fold.
+    if (cloud.DUP) {
+      for (var di = 0; di < n; di++) {
+        var db = cloud.DUP[di];
+        if (db < 0) continue;
+        var DS = cloud.SCL[di], d3 = di * 3, b3 = db * 3;
+        pos[d3] = CV[0] + (pos[b3] - CV[0]) * DS;
+        pos[d3 + 1] = CV[1] + (pos[b3 + 1] - CV[1]) * DS;
+        pos[d3 + 2] = CV[2] + (pos[b3 + 2] - CV[2]) * DS;
+      }
+    }
+    var FAMo = cloud.FAM;
+    // shells: puff + ignite
+    for (var s = 0; s < n; s++) {
+      if (FAMo[s] !== 0) continue; // SHELL
+      var gs = wavePush(cloud.DIST[s], wp, RMAX), s3 = s * 3, g = gs * 0.10;
+      if (cloud.DUP && cloud.DUP[s] >= 0) g *= cloud.SCL[s]; // copies: keep nesting exact
+      pos[s3] += cloud.AX[s] * g; pos[s3 + 1] += cloud.AY[s] * g; pos[s3 + 2] += cloud.AZ[s] * g;
+      // Post-v1 delta 2026-10-25 (Calvin): breath-wave brightness increase
+      // REMOVED for the dust — the wave still puffs positions, but shell
+      // brightness no longer rises with it. Depth shading kept.
+    }
+    // (The star flight/blink block went with the dots in the
+    // 2026-10-27 cleanup — it iterated an always-empty block.)
+    if (cloud.TWIN) {
+      // Derive every twin's position from its source's final
+      // position, rotated ovAngle about the z axis through CV.
+      // At the default ovAngle = pi this is the fixed 180°
+      // overlay of 2026-10-28 ((x, y) -> (-x, -y) about CV);
+      // drawFrame now adds the stepped offset on top of the
+      // half-turn (post-v2 delta 2026-10-29, Calvin): ease +30°
+      // across one fold loop, hold for one loop, repeat — 12
+      // steps make a full overlay rotation over 24 loops
+      // (720s at the current pace), extending the piece's full
+      // cycle accordingly.
+      for (var mm = 0; mm < n; mm++) {
+        var mb = cloud.TWIN[mm];
+        if (mb < 0) continue;
+        var m3 = mm * 3, b3m = mb * 3;
+        var dx = pos[b3m] - CV[0], dy = pos[b3m + 1] - CV[1];
+        pos[m3] = CV[0] + dx * ovc - dy * ovs;
+        pos[m3 + 1] = CV[1] + dx * ovs + dy * ovc;
+        pos[m3 + 2] = pos[b3m + 2];
+      }
+    }
+    if (MIRROR_Z) for (var mz = 0; mz < n; mz++) pos[mz * 3 + 2] = 2 * CV[2] - pos[mz * 3 + 2];
+    var b0 = camBasis(cloud, lp), t3 = [0, 0, 0];
+    var sx = F.sx, sy = F.sy, sz = F.sz;
+    for (var p = 0; p < n; p++) {
+      project3(pos[p * 3], pos[p * 3 + 1], pos[p * 3 + 2], b0, t3, 0);
+      sx[p] = t3[0]; sy[p] = t3[1]; sz[p] = t3[2];
+    }
+    // Entire-composition rotation (post-v2 delta 2026-10-29,
+    // Calvin): every projected point turns ROT_CW30 clockwise
+    // about the frame center, as one rigid transform — sources,
+    // layer copies and overlay twins together; depth (sz) and
+    // painter order are untouched. In screen coordinates (y
+    // down) the clockwise rotation by t is
+    // (x cos t - y sin t, x sin t + y cos t); it composes with
+    // the ROT180 composite flip, which preserves the sense.
+    var rc = Math.cos(ROT_CW30), rs = Math.sin(ROT_CW30);
+    for (var q = 0; q < n; q++) {
+      var qx = sx[q], qy = sy[q];
+      sx[q] = qx * rc - qy * rs;
+      sy[q] = qx * rs + qy * rc;
+    }
+    return F;
+  }
+
+  function fitView(cloud, RW) {
+    // Turning delta 2026-10-24: fit the CONSTELLATION (shells, stars)
+    // entirely inside the frame over the whole loop. The PLANE lattice is
+    // an ambient dust field and is excluded from the fit — it may reach
+    // the edges, as in the approved Touring framing. (Was: 2.16 * 1.62
+    // fitted zoom over all points, which cropped the web itself.)
+    var mx = 0;
+    // Post-v1 perf delta 2026-10-25: 120 phases instead of 240 — the
+    // extent curve is smooth, and the 240-phase fitView cost ~1.5s of
+    // renderer setup over ~97k points. Verified against the 240-phase
+    // value before shipping (delta reported in FORK_NOTES).
+    for (var f = 0; f < 120; f++) {
+      var F = computeFrame(cloud, f / 120, Math.PI + (f / 120) * TAU);
+      for (var i = 0; i < cloud.n; i++) {
+        if (cloud.FAM[i] === 1) continue; // PLANE lattice dust
+        var a = Math.abs(F.sx[i]), b = Math.abs(F.sy[i]);
+        if (a > mx) mx = a;
+        if (b > mx) mx = b;
+      }
+    }
+    // Turning delta 2026-10-24: zoom in 50% from the full fit (1.5x).
+    // Post-v1 deltas 2026-10-25 (Calvin): zoom in 100% twice — 3.0x, then
+    // 6.0x the full fit; then RESET to normal (1.5x, the v1 framing).
+    // Post-v1 deltas 2026-10-26/27 (Calvin): zoom in 77% twice — 1.5
+    // -> 2.655 -> 4.69935x; then +40% -> 6.57909x; +60% ->
+    // 10.526544x; then +40% -> 14.7371616x. Post-v1 delta
+    // 2026-10-28: zoom OUT 42% — 14.7371616 x 0.58 = 8.547553728x.
+    // Post-v2 delta 2026-10-29 (Calvin): zoom OUT 10% —
+    // 8.547553728 x 0.9 = 7.6927983552x. Post-v2 delta
+    // 2026-10-29 (Calvin): zoom IN 16% —
+    // 7.6927983552 x 1.16 = 8.923745692032x.
+    return 8.923745692032 * (RW / 2 - 16) / mx;
+  }
+
+  // ---- canvas renderer ------------------------------------------------------
+  function createRenderer(cloud, RW) {
+    RW = RW || 720;
+    var PX = RW / 720;
+    var DUST_R = Math.max(1, Math.round(1 * PX)); // dust speckle radius
+    var SC = fitView(cloud, RW);
+
+    var scene = document.createElement("canvas");
+    scene.width = RW; scene.height = RW;
+    var sctx = scene.getContext("2d");
+    // (The wash overlay canvas, the dot spectrum stops, and the web
+    // stroke colors went in the 2026-10-27 cleanup — the dots and
+    // the linework they served are gone; only dust renders now.)
+
+    var n = cloud.n;
+    var order = new Uint32Array(n);
+    for (var i = 0; i < n; i++) order[i] = i;
+
+    // Invisible optimizations (post-v2 delta 2026-10-29, Calvin:
+    // "do the invisible optimizations only" — target a real
+    // 30fps at 144k points; NO visual change, verified by
+    // byte-identical frames):
+    // (1) Painter sort: the comparison sort is replaced by a
+    // stable two-pass radix sort on the full float depth key
+    // (order-isomorphic bit mapping), fed from the previous
+    // frame's order so equal-depth tie-breaking behaves
+    // exactly as the stable Array.sort did.
+    var orderTmp = new Uint32Array(n);
+    var keyOf = new Uint32Array(n);
+    var cnt = new Uint32Array(65536);
+    var szBits = null;
+    function sortByDepth(sz) {
+      if (!szBits || szBits.buffer !== sz.buffer) szBits = new Uint32Array(sz.buffer, sz.byteOffset, n);
+      for (var i = 0; i < n; i++) {
+        var b = szBits[i];
+        keyOf[i] = (~(b ^ ((b & 0x80000000) ? 0xFFFFFFFF : 0x80000000))) >>> 0; // descending depth key
+      }
+      var src = order, dst = orderTmp;
+      for (var pass = 0; pass < 2; pass++) {
+        var shift = pass * 16;
+        cnt.fill(0);
+        for (var a = 0; a < n; a++) cnt[(keyOf[src[a]] >>> shift) & 0xFFFF]++;
+        var sum = 0;
+        for (var c = 0; c < 65536; c++) { var cc = cnt[c]; cnt[c] = sum; sum += cc; }
+        for (var d = 0; d < n; d++) { var idx = src[d]; dst[cnt[(keyOf[idx] >>> shift) & 0xFFFF]++] = idx; }
+        var sw = src; src = dst; dst = sw;
+      }
+      if (src !== order) order.set(src);
+    }
+    // (2) Dust color groups: colors are static (baked at build;
+    // the per-frame brightness factor is a steady 1), so each
+    // point's rgba group is computed ONCE here instead of
+    // rebuilding an rgba string for all 144k points per frame.
+    // Per frame the pass only buckets point coordinates by
+    // group id, in first-appearance order along the depth
+    // order — the same draw sequence as before.
+    var C0 = cloud.C;
+    var grpOf = new Uint8Array(n);
+    var groupStyles = [];
+    var styleToGrp = {};
+    for (var gi = 0; gi < n; gi++) {
+      if (cloud.FAM[gi] !== 0) continue;
+      var g3 = gi * 3;
+      var fs0 = "rgba(" + Math.round(Math.min(1, C0[g3]) * 255) + "," + Math.round(Math.min(1, C0[g3 + 1]) * 255) + "," + Math.round(Math.min(1, C0[g3 + 2]) * 255) + ",0.1925)";
+      var gid = styleToGrp[fs0];
+      if (gid === undefined) { gid = groupStyles.length; styleToGrp[fs0] = gid; groupStyles.push(fs0); }
+      grpOf[gi] = gid;
+    }
+    // Buckets are preallocated typed arrays sized by each
+    // group's exact point count (indexed writes, no per-frame
+    // allocation or array growth).
+    var grpCount = new Int32Array(groupStyles.length);
+    for (var gc = 0; gc < n; gc++) if (cloud.FAM[gc] === 0) grpCount[grpOf[gc]]++;
+    var buckets = groupStyles.map(function (s, g) { return new Int32Array(grpCount[g] * 2); });
+    var bucketFill = new Int32Array(groupStyles.length);
+    var bucketSeen = new Int32Array(groupStyles.length);
+    var bucketStamp = 0;
+
+    // Stepped tracing REMOVED 2026-10-28 at Calvin's direction
+    // ("remove tracing"; the blur came off in the previous delta).
+    // The renderer now draws exactly one frame — no echo history,
+    // no ghost replays, no snapshots.
+
+    function drawFrame(timeSec, ctx) {
+      var lp = ((timeSec * SPEED / LOOP_S) % 1 + 1) % 1;
+      // Stepped overlay (post-v2 delta 2026-10-29, Calvin): the
+      // twin overlay rides on the base half-turn and advances in
+      // 30° steps — ease +30° (smoothstep) across one fold loop,
+      // then hold for one loop, repeating. 12 steps make a full
+      // overlay rotation over 24 loops (720s = 12 minutes at
+      // the current pace; the pace was set 2026-10-29 so the
+      // full cycle lands exactly on 12 minutes), so the piece's
+      // full cycle is 24 fold loops. L is the unwrapped loop
+      // count; callers must not wrap timeSec at one loop (the
+      // on-chain boot wraps at 24 loops for this reason).
+      var L = timeSec * SPEED / LOOP_S;
+      var pair = Math.floor(L / 2);
+      var ph = L - 2 * pair;
+      var e = ph < 1 ? ph * ph * (3 - 2 * ph) : 1;
+      var ov = Math.PI + (pair + e) * (Math.PI / 6);
+      // Colors are STATIC (post-v1 delta 2026-10-28, Calvin:
+      // "remove the continuous color shift and order the colors
+      // from brightest interior to darkest exterior"). The color
+      // cycle of deltas 42-44 is removed: every point keeps the
+      // color baked at build time, ordered brightest at the
+      // interior (1x layer, inner shells — pale gold) to darkest
+      // at the exterior (4x layer, outer shells — deep plum).
+      var F = computeFrame(cloud, lp, ov);
+      var sx = F.sx, sy = F.sy, sz = F.sz;
+      sortByDepth(sz); // far -> near (stable radix; see createRenderer)
+
+      sctx.setTransform(1, 0, 0, 1, 0, 0);
+      sctx.globalAlpha = 1;
+      sctx.fillStyle = "#000";
+      sctx.fillRect(0, 0, RW, RW);
+      var half = RW / 2;
+      // Post-v1 perf delta 2026-10-25: points accumulate into per-color
+      // batches and fill ONCE per color, instead of fillStyle +
+      // beginPath + fill per point (~97k canvas calls/frame -> ~12).
+      // Dust has 26 distinct colors at the current build
+      // (layer-ramp bands x shell fractions; brightness is a
+      // steady 1, depth shade bypassed). Depth order is
+      // preserved within each color group.
+      // SHELL (dust) — static layer-ramp colors (brightest
+      // interior -> darkest exterior), opacity 0.1925 (halved
+      // from 0.385 on 2026-10-27 at Calvin's direction, with
+      // the dead-code cleanup). Grouped by the precomputed
+      // color groups (invisible optimization, above): buckets
+      // fill in depth order, groups flush in first-appearance
+      // order — the same draw sequence as the per-frame
+      // string-grouped pass this replaces.
+      bucketStamp++;
+      var dustOrder = [];
+      bucketFill.fill(0);
+      for (var o = 0; o < n; o++) {
+        var idx = order[o];
+        var X = Math.trunc(sx[idx] * SC + half), Y = Math.trunc(sy[idx] * SC + half);
+        if (X < -12 || Y < -12 || X >= RW + 12 || Y >= RW + 12) continue;
+        if (cloud.FAM[idx] !== 0) continue; // only SHELL dust is built
+        var bg = grpOf[idx];
+        if (bucketSeen[bg] !== bucketStamp) { bucketSeen[bg] = bucketStamp; dustOrder.push(bg); }
+        var bf = bucketFill[bg];
+        buckets[bg][bf] = X; buckets[bg][bf + 1] = Y;
+        bucketFill[bg] = bf + 2;
+      }
+      // dust: one path + one fill per color, flushed in chunks of
+      // 2048 points (a single ~89k-arc path is a rasterizer cliff in
+      // some engines; 2048-arc chunks stay on the fast path and still
+      // cut canvas calls ~4000x vs per-point fills)
+      for (var gi2 = 0; gi2 < dustOrder.length; gi2++) {
+        var bgid = dustOrder[gi2];
+        var g2 = buckets[bgid], gcount = bucketFill[bgid];
+        sctx.fillStyle = groupStyles[bgid];
+        sctx.beginPath();
+        var chunk = 0;
+        for (var dj = 0; dj < gcount; dj += 2) {
+          sctx.moveTo(g2[dj] + DUST_R, g2[dj + 1]);
+          sctx.arc(g2[dj], g2[dj + 1], DUST_R, 0, TAU);
+          // flush full chunks only — an empty-path fill corrupts
+          // some rasterizers' path state (found via the QA harness)
+          if (++chunk === 2048 && dj + 2 < gcount) { sctx.fill(); sctx.beginPath(); chunk = 0; }
+        }
+        if (chunk > 0) sctx.fill();
+      }
+      // (The magenta fold-core outline of deltas 46-49 was
+      // removed 2026-10-28 at Calvin's direction, with this
+      // cleanup. The wash-overlay star pass and the hidden web
+      // stroke pass went in the 2026-10-27 cleanup — the dots
+      // are gone and the linework's endpoints went with them.
+      // The web pair sets remain computed on the cloud for the
+      // record.)
+
+      // final composite + 180° rotation. Blur REMOVED 2026-10-28
+      // at Calvin's direction ("take just the blur off, leave
+      // tracing"), tracing removed in the following delta — the
+      // composite is a straight drawImage of the single frame.
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      if (ROT180) ctx.setTransform(-1, 0, 0, -1, RW, RW);
+      ctx.drawImage(scene, 0, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+
+    var rafId = 0, t0 = 0, fpsN = 0, fpsT = 0, onFps = null;
+    function start(canvas, fpsCb) {
+      var ctx = canvas.getContext("2d");
+      onFps = fpsCb || null;
+      t0 = performance.now(); fpsT = t0;
+      cancelAnimationFrame(rafId);
+      var tick = function (now) {
+        drawFrame((now - t0) / 1000, ctx);
+        fpsN++;
+        if (now - fpsT >= 1000) {
+          if (onFps) onFps(Math.round(fpsN * 1000 / (now - fpsT)));
+          fpsN = 0; fpsT = now;
+        }
+        rafId = requestAnimationFrame(tick);
+      };
+      rafId = requestAnimationFrame(tick);
+    }
+    function stop() { cancelAnimationFrame(rafId); }
+
+    return { SC: SC, drawFrame: drawFrame, start: start, stop: stop, cloud: cloud, RW: RW };
+  }
+
+  global.Turning3D = {
+    geoFromToken: geoFromToken,
+    geoFromHash: geoFromHash,
+    geometryTraits: geometryTraits,
+    buildPointCloud: buildPointCloud,
+    createRenderer: createRenderer,
+    computeFrame: computeFrame,
+    PALETTES: Object.keys(PALETTES)
+  };
+})(typeof self !== "undefined" ? self : this);
+</script>
+<script>
+
+  var TOKENS = [1, 8, 11];
+  var grid = document.getElementById("grid");
+  var pieces = [];
+  TOKENS.forEach(function (id) {
+    var geo = Turning3D.geoFromToken(id);
+    var cloud = Turning3D.buildPointCloud(geo.hash, geo, null);
+    var renderer = Turning3D.createRenderer(cloud, 360);
+    var fig = document.createElement("figure");
+    var stage = document.createElement("div");
+    stage.className = "stage";
+    var cv = document.createElement("canvas");
+    cv.width = 360; cv.height = 360;
+    var btn = document.createElement("div");
+    btn.className = "playbtn";
+    btn.innerHTML = "<span>&#9654;</span>";
+    stage.appendChild(cv); stage.appendChild(btn);
+    var cap = document.createElement("figcaption");
+    cap.textContent = "Token #" + id;
+    fig.appendChild(stage); fig.appendChild(cap);
+    grid.appendChild(fig);
+    var piece = { renderer: renderer, ctx: cv.getContext("2d"), stage: stage,
+                  playing: false, elapsed: 0, startedAt: 0 };
+    renderer.drawFrame(0, piece.ctx);
+    stage.addEventListener("click", function () {
+      if (piece.playing) {
+        piece.elapsed += (performance.now() - piece.startedAt) / 1000;
+        piece.playing = false;
+        stage.classList.remove("playing");
+      } else {
+        piece.startedAt = performance.now();
+        piece.playing = true;
+        stage.classList.add("playing");
+      }
+    });
+    pieces.push(piece);
+  });
+  (function loop(now) {
+    pieces.forEach(function (p) {
+      if (p.playing) p.renderer.drawFrame(p.elapsed + (now - p.startedAt) / 1000, p.ctx);
+    });
+    requestAnimationFrame(loop);
+  })(performance.now());
+</script>
+</body>
+</html>
