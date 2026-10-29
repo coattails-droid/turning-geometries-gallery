@@ -2474,21 +2474,26 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     }
     var numGens = DUP_SCALES.length + 1, total0c = TWIN.length;
     var gain0 = SHELL_BG * DUST_GAIN;
-    // Contrast pivot: the ramp's per-channel mean over t in
-    // [0,1] (exact integral of the piecewise-linear ramp),
-    // at the current gain.
-    var piv = [0, 0, 0];
-    for (var pi = 0; pi < RAMP8.length - 1; pi++) {
-      for (var pc = 0; pc < 3; pc++) piv[pc] += (RAMP8[pi][pc] + RAMP8[pi + 1][pc]) / 2;
-    }
-    for (var pc2 = 0; pc2 < 3; pc2++) piv[pc2] = piv[pc2] / (RAMP8.length - 1) * gain0;
+    // Contrast pivot: the per-channel mean of the gained
+    // colors over the actual shell points (first pass), so
+    // the contrast widens the spread without moving the
+    // mean — contrast only, no brightness change.
+    var piv = [0, 0, 0], pivN = 0;
     for (var ci = 0; ci < FAMa.length; ci++) {
       if (FAMa[ci] !== FAM.SHELL) continue;
       var srcI = ci < total0c ? ci : TWIN[ci];
       var gen = Math.min(numGens - 1, Math.floor(srcI / shellCount));
       var rc = rampAt((gen + GFa[ci]) / numGens);
+      piv[0] += rc[0]; piv[1] += rc[1]; piv[2] += rc[2]; pivN++;
+    }
+    for (var pc2 = 0; pc2 < 3; pc2++) piv[pc2] = piv[pc2] / pivN * gain0;
+    for (var ci2 = 0; ci2 < FAMa.length; ci2++) {
+      if (FAMa[ci2] !== FAM.SHELL) continue;
+      var srcI2 = ci2 < total0c ? ci2 : TWIN[ci2];
+      var gen2 = Math.min(numGens - 1, Math.floor(srcI2 / shellCount));
+      var rc2 = rampAt((gen2 + GFa[ci2]) / numGens);
       for (var cc = 0; cc < 3; cc++) {
-        C[ci * 3 + cc] = piv[cc] + (rc[cc] * gain0 - piv[cc]) * DUST_CONTRAST;
+        C[ci2 * 3 + cc] = piv[cc] + (rc2[cc] * gain0 - piv[cc]) * DUST_CONTRAST;
       }
     }
 
