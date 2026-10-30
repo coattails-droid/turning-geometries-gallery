@@ -1983,7 +1983,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   var TRI_PHI = Math.PI / 2; // the shared triangle orientation: one vertex up (foci, shells, fold core)
   var FOLD_AMP = 0.85 * Math.PI;
   var SHELL_BG = 1.0; // Turning delta 2026-10-24: shells in the background (0.18); post-v1 2026-10-25 (Calvin): 0.36 -> 0.54 steady -> MAX 1.0, full gradient color
-  var DUST_GAIN = 1.495; // post-v2 delta 2026-10-29 (Calvin): dust brightness +15% (1.15); post-v3 delta 2026-10-29 (Calvin): +30% more — 1.15 x 1.3 = 1.495. Multiplies the layer-ramp colors in buildPointCloud (draw clamps each channel at 1, so the brightest band clips)
+  var DUST_GAIN = 1.33055; // post-v2 delta 2026-10-29 (Calvin): dust brightness +15% (1.15); post-v3 delta 2026-10-29 (Calvin): +30% more — 1.15 x 1.3 = 1.495; post-v3 delta 2026-10-30 (Calvin): reduce dust brightness across all layers by 11% — 1.495 x 0.89 = 1.33055. Multiplies the layer-ramp colors in buildPointCloud (draw clamps each channel at 1, so the brightest band clips)
   var DUST_CONTRAST = 1.22; // post-v3 delta 2026-10-29 (Calvin): dust contrast +22% — each baked color is pushed away from the ramp's per-channel mean by this factor in buildPointCloud (mean preserved, spread widened)
   var POINT_TOTAL = 144000; // post-v2 delta 2026-10-29 (Calvin): rendered point count LOCKED series-wide — every token builds exactly this many points (see the shell allocation in buildPointCloud)
   var LOOP_S = 16, BREATH_S = 8;
