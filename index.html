@@ -2723,8 +2723,10 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     // Post-v2 delta 2026-10-29 (Calvin): zoom OUT 10% —
     // 8.547553728 x 0.9 = 7.6927983552x. Post-v2 delta
     // 2026-10-29 (Calvin): zoom IN 16% —
-    // 7.6927983552 x 1.16 = 8.923745692032x.
-    return 8.923745692032 * (RW / 2 - 16) / mx;
+    // 7.6927983552 x 1.16 = 8.923745692032x. Post-v3 delta
+    // 2026-10-30 (Calvin): zoom OUT 30% —
+    // 8.923745692032 x 0.7 = 6.2466219844224x.
+    return 6.2466219844224 * (RW / 2 - 16) / mx;
   }
 
   // ---- canvas renderer ------------------------------------------------------
