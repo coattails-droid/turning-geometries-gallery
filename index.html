@@ -1976,7 +1976,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   var CAM_EL = 78.75 * Math.PI / 180; // camera elevation. Post-v1 delta 2026-10-28 (Calvin: "adjust camera to look down onto the center of the triangle"): was -11.25° (below center level, the fold plane nearly edge-on); now +78.75° — the mirror tilt from above, 11.25° off straight-down, so the triangle reads face-on while the orbit basis stays sound (exactly 90° would put the forward vector parallel to the world z axis the basis is built from).
   var MIRROR_Z = true;                 // vertical mirror about z = CV[2]
   var ROT180 = true;                   // rotate the final frame 180°
-  var ROT_CW30 = Math.PI / 6;          // post-v2 delta 2026-10-29 (Calvin): rotate the ENTIRE composition 30° clockwise — applied to the projected coordinates in computeFrame (so fitView fits the rotated frame and the points stay crisp), on top of the ROT180 composite
+  var ROT_CW60 = Math.PI / 3;          // post-v2 delta 2026-10-29 (Calvin): rotate the ENTIRE composition 30° clockwise; post-v3 delta 2026-10-30 (Calvin): rotate another 30° clockwise — 60° total (ROT_CW60). Applied to the projected coordinates in computeFrame (so fitView fits the rotated frame and the points stay crisp), on top of the ROT180 composite
   var CAM_DIST = 14.4; // scaled with the outermost overlay (3.6 at 1x, 7.2 at 2x, 14.4 at 4x, 28.8 at 8x). Post-v1 deltas 2026-10-26: layers halved to 1x + 2x (7.2), then the 4x layer brought back (14.4)
   // (BLUR_PX of delta 69 removed with the blur itself, same day.)
   var FOLD_R = 1.0;
@@ -2677,14 +2677,15 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       sx[p] = t3[0]; sy[p] = t3[1]; sz[p] = t3[2];
     }
     // Entire-composition rotation (post-v2 delta 2026-10-29,
-    // Calvin): every projected point turns ROT_CW30 clockwise
+    // Calvin; +30° more post-v3 2026-10-30): every projected
+    // point turns ROT_CW60 clockwise
     // about the frame center, as one rigid transform — sources,
     // layer copies and overlay twins together; depth (sz) and
     // painter order are untouched. In screen coordinates (y
     // down) the clockwise rotation by t is
     // (x cos t - y sin t, x sin t + y cos t); it composes with
     // the ROT180 composite flip, which preserves the sense.
-    var rc = Math.cos(ROT_CW30), rs = Math.sin(ROT_CW30);
+    var rc = Math.cos(ROT_CW60), rs = Math.sin(ROT_CW60);
     for (var q = 0; q < n; q++) {
       var qx = sx[q], qy = sy[q];
       sx[q] = qx * rc - qy * rs;
