@@ -2804,7 +2804,8 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       var g3 = gi * 3;
       // Post-v3 delta 2026-10-31 (Calvin): hue-preserving
       // soft clip + opacity +30% (0.1925 -> 0.25025), then
-      // +30% again on 2026-10-31 (0.25025 -> 0.325325). The old
+      // +30% again on 2026-10-31 (0.25025 -> 0.325325), and
+      // +30% again (0.325325 -> 0.4229225). The old
       // per-channel Math.min(1, c) clamp skewed hues toward
       // white once the gain pushed channels past 1 (72% of
       // points); scaling the whole RGB vector by 1/max keeps
@@ -2813,7 +2814,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       // are untouched.
       var smx = Math.max(C0[g3], C0[g3 + 1], C0[g3 + 2]);
       var scl = smx > 1 ? 1 / smx : 1;
-      var fs0 = "rgba(" + Math.round(C0[g3] * scl * 255) + "," + Math.round(C0[g3 + 1] * scl * 255) + "," + Math.round(C0[g3 + 2] * scl * 255) + ",0.325325)";
+      var fs0 = "rgba(" + Math.round(C0[g3] * scl * 255) + "," + Math.round(C0[g3 + 1] * scl * 255) + "," + Math.round(C0[g3 + 2] * scl * 255) + ",0.4229225)";
       var gid = styleToGrp[fs0];
       if (gid === undefined) { gid = groupStyles.length; styleToGrp[fs0] = gid; groupStyles.push(fs0); }
       grpOf[gi] = gid;
@@ -2874,9 +2875,10 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       // steady 1, depth shade bypassed). Depth order is
       // preserved within each color group.
       // SHELL (dust) — static layer-ramp colors (brightest
-      // interior -> darkest exterior), opacity 0.325325 (0.385
+      // interior -> darkest exterior), opacity 0.4229225 (0.385
       // originally, halved to 0.1925 on 2026-10-27, raised
-      // +30% twice on 2026-10-31 with the hue-preserving clip).
+      // +30% three times on 2026-10-31 with the hue-preserving
+      // clip — now above the original 0.385).
       // Grouped by the precomputed
       // color groups (invisible optimization, above): buckets
       // fill in depth order, groups flush in first-appearance
