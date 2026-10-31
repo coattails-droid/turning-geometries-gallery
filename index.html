@@ -1985,7 +1985,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   var SHELL_BG = 1.0; // Turning delta 2026-10-24: shells in the background (0.18); post-v1 2026-10-25 (Calvin): 0.36 -> 0.54 steady -> MAX 1.0, full gradient color
   var DUST_GAIN = 1.56605735; // post-v2 delta 2026-10-29 (Calvin): dust brightness +15% (1.15); post-v3 delta 2026-10-29 (Calvin): +30% more — 1.15 x 1.3 = 1.495; post-v3 delta 2026-10-30 (Calvin): reduce dust brightness across all layers by 11% — 1.495 x 0.89 = 1.33055; post-v3 delta 2026-10-30 (Calvin): increase dust brightness by 7% — 1.33055 x 1.07 = 1.4236885; post-v3 delta 2026-10-30 (Calvin, "deepen the colors and increase brightness", medium option): brightness +10% — 1.4236885 x 1.10 = 1.56605735. Multiplies the layer-ramp colors in buildPointCloud (draw clamps each channel at 1, so the brightest band clips)
   var DUST_CONTRAST = 1.464; // post-v3 delta 2026-10-29 (Calvin): dust contrast +22% — 1.22; post-v3 delta 2026-10-30 (Calvin, "deepen the colors", medium option): contrast +20% — 1.22 x 1.20 = 1.464. Each baked color is pushed away from the ramp's per-channel mean by this factor in buildPointCloud (mean preserved, spread widened)
-  var POINT_TOTAL = 144000; // post-v2 delta 2026-10-29 (Calvin): rendered point count LOCKED series-wide — every token builds exactly this many points (see the shell allocation in buildPointCloud)
+  var POINT_TOTAL = 144000; // post-v2 delta 2026-10-29 (Calvin): rendered point count LOCKED series-wide — every token builds exactly this many points (see the shell allocation in buildPointCloud). Post-v3 delta 2026-10-31 (Calvin): the composition is duplicated twice (+30° / +60° overlays, buildDups), so the rendered total is now 3 x POINT_TOTAL = 432,000
   var LOOP_S = 16, BREATH_S = 8;
   var SPEED = 0.5333333333333333; // pace history: 0.5, raised 23% to 0.615 on 2026-10-28 (loop 26.02s), set to 0.9142857142857143 on 2026-10-29 for a 7-minute full cycle; post-v2 delta 2026-10-29 (Calvin): slowed so the full 24-loop overlay cycle spans exactly 12 minutes — each fold loop is 30s of wall time (16 / 0.5333333333333333 = 30; 24 x 30 = 720s)
 
@@ -2497,17 +2497,47 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       }
     }
 
+    // Post-v3 delta 2026-10-31 (Calvin): duplicate the ENTIRE
+    // composition twice — one copy overlaid rotated 30°
+    // clockwise, one 60° clockwise. Appended after the color
+    // bake so each duplicate copies its source's baked color
+    // verbatim; per frame, computeFrame derives each
+    // duplicate's screen position from its composition
+    // source's final projected position (see the DUPR block
+    // there). DUPR[i] is the duplicate's clockwise screen
+    // rotation in radians (0 = not a duplicate); DUPSRC[i]
+    // is its composition source index.
+    var DUPR = [], DUPSRC = [];
+    (function buildDups() {
+      var nC = P.length / 3;
+      for (var di = 0; di < nC; di++) { DUPR.push(0); DUPSRC.push(-1); }
+      var segs = [
+        [P, 3], [C, 3], [FAMa, 1], [DIST, 1], [AX, 1], [AY, 1], [AZ, 1],
+        [GFa, 1]
+      ];
+      var angs = [Math.PI / 6, Math.PI / 3];
+      for (var set = 0; set < 2; set++) {
+        segs.forEach(function (sg) {
+          var arr = sg[0], comps = sg[1];
+          for (var q = 0; q < nC; q++)
+            for (var c = 0; c < comps; c++) arr.push(arr[q * comps + c]);
+        });
+        for (var mt = 0; mt < nC; mt++) { TWIN.push(-1); DUP.push(-1); SCL.push(1); DUPR.push(angs[set]); DUPSRC.push(mt); }
+      }
+    })();
+
     var nPts = P.length / 3;
     var cloud = {
       P: new Float32Array(P), C: new Float32Array(C), FAM: new Uint8Array(FAMa),
       DIST: new Float32Array(DIST), AX: new Float32Array(AX),
       AY: new Float32Array(AY), AZ: new Float32Array(AZ),
       n: nPts, CV: CV, RMAX: RMAX, hash: hash,
-      shells: radii.length * foci.length * (DUP_SCALES.length + 1) * 2,
+      shells: radii.length * foci.length * (DUP_SCALES.length + 1) * 2 * 3,
       palette: pal, paletteName: pname,
       starBlock: sb, nStar: nStar,
       DUP: new Int32Array(DUP), SCL: new Float32Array(SCL),
       TWIN: new Int32Array(TWIN),
+      DUPR: new Float32Array(DUPR), DUPSRC: new Int32Array(DUPSRC),
       web: { p3: pairArr(pairs3), p6: pairArr(pairs6), p9: pairArr(pairs9),
              p12: pairArr(pairs12), p24: pairArr(pairs24) },
       geo: geo
@@ -2690,6 +2720,26 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       var qx = sx[q], qy = sy[q];
       sx[q] = qx * rc - qy * rs;
       sy[q] = qx * rs + qy * rc;
+    }
+    // Duplicate overlays (post-v3 delta 2026-10-31, Calvin):
+    // each duplicate point takes its composition source's
+    // final projected position, turned DUPR further clockwise
+    // in screen space (the ROT_CW90 convention above; +30°
+    // and +60° copies), with the source's depth — the whole
+    // composition (base + stepped twins) appears three times,
+    // at 0° / +30° / +60°.
+    if (cloud.DUPR) {
+      var dcA = 0, dsA = 0, dLast = 0;
+      for (var dp = 0; dp < n; dp++) {
+        var dr2 = cloud.DUPR[dp];
+        if (!dr2) continue;
+        if (dr2 !== dLast) { dcA = Math.cos(dr2); dsA = Math.sin(dr2); dLast = dr2; }
+        var dsrc = cloud.DUPSRC[dp];
+        var dx2 = sx[dsrc], dy2 = sy[dsrc];
+        sx[dp] = dx2 * dcA - dy2 * dsA;
+        sy[dp] = dx2 * dsA + dy2 * dcA;
+        sz[dp] = sz[dsrc];
+      }
     }
     return F;
   }
