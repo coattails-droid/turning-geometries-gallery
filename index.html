@@ -2595,8 +2595,8 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     var n = cloud.n, CV = cloud.CV, RMAX = cloud.RMAX;
     // Overlay angle for the twin derivation below (post-v2 delta
     // 2026-10-29): defaults to the plain half-turn; drawFrame
-    // passes pi + the stepped offset (ease 30° across one loop,
-    // hold one loop, repeating — a full overlay turn in 24
+    // passes pi + the stepped offset (ease 90° across one loop,
+    // hold one loop, repeating — a full overlay turn in 8
     // loops), fitView samples the whole turn.
     if (ovAngle === undefined) ovAngle = Math.PI;
     var ovc = Math.cos(ovAngle), ovs = Math.sin(ovAngle);
@@ -2654,10 +2654,10 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       // At the default ovAngle = pi this is the fixed 180°
       // overlay of 2026-10-28 ((x, y) -> (-x, -y) about CV);
       // drawFrame now adds the stepped offset on top of the
-      // half-turn (post-v2 delta 2026-10-29, Calvin): ease +30°
-      // across one fold loop, hold for one loop, repeat — 12
-      // steps make a full overlay rotation over 24 loops
-      // (720s at the current pace), extending the piece's full
+      // half-turn (post-v2 delta 2026-10-29, Calvin): ease +90°
+      // across one fold loop, hold for one loop, repeat — 4
+      // steps make a full overlay rotation over 8 loops
+      // (240s at the current pace), extending the piece's full
       // cycle accordingly.
       for (var mm = 0; mm < n; mm++) {
         var mb = cloud.TWIN[mm];
@@ -2837,19 +2837,19 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       var lp = ((timeSec * SPEED / LOOP_S) % 1 + 1) % 1;
       // Stepped overlay (post-v2 delta 2026-10-29, Calvin): the
       // twin overlay rides on the base half-turn and advances in
-      // 30° steps — ease +30° (smoothstep) across one fold loop,
-      // then hold for one loop, repeating. 12 steps make a full
-      // overlay rotation over 24 loops (720s = 12 minutes at
-      // the current pace; the pace was set 2026-10-29 so the
-      // full cycle lands exactly on 12 minutes), so the piece's
-      // full cycle is 24 fold loops. L is the unwrapped loop
-      // count; callers must not wrap timeSec at one loop (the
-      // on-chain boot wraps at 24 loops for this reason).
+      // steps — ease (smoothstep) across one fold loop, then
+      // hold for one loop, repeating. Step size was 30° x12
+      // (24 loops, 720s) until post-v3 delta 2026-10-31
+      // (Calvin): 90° steps x4 — a full overlay rotation over
+      // 8 loops (240s = 4 minutes at the current pace), so the
+      // piece's full cycle is 8 fold loops. L is the unwrapped
+      // loop count; callers must not wrap timeSec at one loop
+      // (the on-chain boot wraps at 8 loops for this reason).
       var L = timeSec * SPEED / LOOP_S;
       var pair = Math.floor(L / 2);
       var ph = L - 2 * pair;
       var e = ph < 1 ? ph * ph * (3 - 2 * ph) : 1;
-      var ov = Math.PI + (pair + e) * (Math.PI / 6);
+      var ov = Math.PI + (pair + e) * (Math.PI / 2);
       // Colors are STATIC (post-v1 delta 2026-10-28, Calvin:
       // "remove the continuous color shift and order the colors
       // from brightest interior to darkest exterior"). The color
