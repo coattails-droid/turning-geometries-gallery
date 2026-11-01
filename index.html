@@ -3205,9 +3205,26 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
         // as one path per chord, under globalAlpha 0.7. The
         // alpha is restored to 1 immediately after — it must
         // never leak into the dust pass.
+        // Identical chords are stroked ONCE (post-V5 delta 98,
+        // 2026-11-01, Calvin: "reduce opacity on the central
+        // spokes to 70%"). The five scale copies of each spoke
+        // are the same line, so as full-frame chords they were
+        // identical — and stacked five deep, compositing the
+        // spoke dashes to nearly opaque while single edges sat
+        // at the intended 0.7. Deduping exact duplicates (key =
+        // chord endpoints at 0.01px, direction-canonical) makes
+        // every line render at one true 70% pass. Lines that are
+        // merely NEAR-identical (the twin's 2–3px offsets) are
+        // NOT merged — the always-drawn ruling stands.
+        var seenChords = {};
         function strokeSeg(s) {
           var ch = chord(s);
           if (!ch) return;
+          var ax = ch[0], ay = ch[1], bx = ch[2], by = ch[3];
+          if (bx < ax || (bx === ax && by < ay)) { var tx = ax, ty = ay; ax = bx; ay = by; bx = tx; by = ty; }
+          var key = ax.toFixed(2) + ',' + ay.toFixed(2) + ',' + bx.toFixed(2) + ',' + by.toFixed(2);
+          if (seenChords[key]) return;
+          seenChords[key] = 1;
           var dx = ch[2] - ch[0], dy = ch[3] - ch[1];
           var len = Math.hypot(dx, dy);
           if (len < 0.5) return;
