@@ -7,11 +7,11 @@
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="description" content="Turning Geometries — Series 7. A generative geometry series: 144,000 points of sunlight dust folding in slow triangular shells, rendered live in your browser.">
+<meta name="description" content="Turning Geometries — Series 7. A small generative series of 25: triangular Fibonacci shells in a pink-lotus palette folding through a slow four-minute cycle, rendered live in your browser.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Turning Geometries">
 <meta property="og:title" content="Turning Geometries">
-<meta property="og:description" content="Series 7 — 144,000 points of sunlight dust folding in slow triangular shells, rendered live in your browser.">
+<meta property="og:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a pink-lotus palette, folding through a slow four-minute cycle, rendered live in your browser.">
 <meta property="og:url" content="https://coattails-droid.github.io/turning-geometries-gallery/">
 <meta property="og:image" content="https://coattails-droid.github.io/turning-geometries-gallery/og-still.png">
 <meta property="og:image:width" content="1080">
@@ -19,7 +19,7 @@
 <meta property="og:image:alt" content="Turning Geometries token 1">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Turning Geometries">
-<meta name="twitter:description" content="Series 7 — 144,000 points of sunlight dust folding in slow triangular shells, rendered live in your browser.">
+<meta name="twitter:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a pink-lotus palette, folding through a slow four-minute cycle, rendered live in your browser.">
 <meta name="twitter:image" content="https://coattails-droid.github.io/turning-geometries-gallery/og-still.png">
 <title>Turning Geometries</title>
 <style>
@@ -29,7 +29,10 @@ body { background: #0d0708; color: #e8e2d4; font-family: 'DejaVu Sans Mono', Men
 header { max-width: 1200px; margin: 0 auto 40px; }
 h1 { font-size: 20px; letter-spacing: 0.35em; font-weight: 600; color: #ffc46e; }
 p.sub { margin-top: 12px; font-size: 15px; letter-spacing: 0.12em; color: #9a937f; }
-#grid { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 28px; }
+p.desc { margin-top: 16px; font-size: 14.5px; line-height: 1.65; letter-spacing: 0.02em; color: #b8b09c; max-width: 620px; }
+#grid { max-width: 600px; margin: 0 auto; display: grid; grid-template-columns: 1fr; gap: 28px; }
+.traits { padding: 0 2px 6px; font-size: 12.5px; line-height: 1.75; letter-spacing: 0.04em; color: #9a937f; }
+.traits b { color: #e8e2d4; font-weight: 400; }
 figure { margin: 0; }
 .stage { position: relative; width: 100%; aspect-ratio: 1; cursor: pointer; }
 .stage canvas { display: block; width: 100%; height: 100%; background: #000; border: 1px solid #3a362c; }
@@ -43,6 +46,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
 <header>
   <h1>TURNING GEOMETRIES</h1>
   <p class="sub">Series 7</p>
+  <p class="desc">A small series of 25 animated tokens. Triangular Fibonacci shells bloom from three foci in a pink-lotus palette, folding through a slow four-minute cycle beneath a stippled magenta construction lattice &mdash; every token&rsquo;s shells clustered in the outer field, so each piece fills its frame edge to edge.</p>
 </header>
 <div id="grid"></div>
 <script>
@@ -3291,7 +3295,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
 </script>
 <script>
 
-  var TOKENS = [1, 8, 11];
+  var TOKENS = [1];
   var grid = document.getElementById("grid");
   var pieces = [];
   TOKENS.forEach(function (id) {
@@ -3309,7 +3313,17 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     stage.appendChild(cv); stage.appendChild(btn);
     var cap = document.createElement("figcaption");
     cap.textContent = "Token #" + id;
-    fig.appendChild(stage); fig.appendChild(cap);
+    var tr = document.createElement("div");
+    tr.className = "traits";
+    var gt = Turning3D.geometryTraits(geo, cloud);
+    var rows = gt.map(function (t) {
+      var v = t.value;
+      if (t.trait_type === "Point") v = Number(v).toLocaleString("en-US");
+      var label = t.trait_type === "Point" ? "Points" : t.trait_type;
+      return label + " &mdash; <b>" + v + "</b>";
+    });
+    tr.innerHTML = rows.join("<br>");
+    fig.appendChild(stage); fig.appendChild(cap); fig.appendChild(tr);
     grid.appendChild(fig);
     var piece = { renderer: renderer, ctx: cv.getContext("2d"), stage: stage,
                   playing: false, elapsed: 0, startedAt: 0 };
