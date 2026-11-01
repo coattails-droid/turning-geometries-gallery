@@ -2001,17 +2001,21 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
   }
 
-  // The 8-stop SUNLIGHT ramp (post-v1 delta 2026-10-28, Calvin:
-  // "lets go back to the sunlight pallette" — the sea ramp of
-  // 2026-10-27 is replaced by the engine's original sunset
-  // family, ordered bright -> dark: the v1 shell gradient's ends
-  // (#ffd98f -> #8e2f6e), its DOT_RAMP sequence, and the heart
-  // gold #ffd166). Spanned across the layers by brightness —
+  // The 8-stop ramp. History: this was the SUNLIGHT ramp
+  // (post-v1 delta 2026-10-28, Calvin: "lets go back to the
+  // sunlight pallette" — the sea ramp of 2026-10-27 replaced by
+  // the engine's original sunset family). Since post-v4 delta
+  // 95 (2026-11-01, locked in V5) the stops carry the LOTUS
+  // palette — the Monet water-lilies ramp deepened twice, its
+  // blue half turned green for the pink-lotus look — ordered
+  // bright -> dark: the shell gradient's ends
+  // (#fde9e9 -> #0f4720), its DOT_RAMP sequence, and the heart
+  // gold #ffb7d1). Spanned across the layers by brightness —
   // brightest interior to darkest exterior, static (the color
   // cycle that ran through it in deltas 42-44 was removed
   // 2026-10-28 at Calvin's direction).
-  var SUN_RAMP_RGB = ["#ffd98f", "#ffd166", "#ffcf6e", "#ff9e4a",
-                      "#ff6e5e", "#e84f9e", "#9a5fd0", "#8e2f6e"].map(hexrgb);
+  var SUN_RAMP_RGB = ["#fde9e9", "#ffb7d1", "#dd98dd", "#9bbf83",
+                      "#26a88d", "#1f9368", "#187945", "#0f4720"].map(hexrgb);
 
 
   // Render palette: series-locked to Sunset. It was a byte-7
@@ -2029,7 +2033,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       // placeholder color. The midnight palette and the lattice /
       // dot-ramp / web / core / wash fields were removed in the
       // 2026-10-27 cleanup — nothing referenced them anymore.
-      SHELL_IN: hexrgb("#ffd98f")
+      SHELL_IN: hexrgb("#fde9e9")
     }
   };
 
@@ -2498,6 +2502,41 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       }
     }
 
+    // Contrast speckles (auditioned 2026-10-31, folded live
+    // 2026-11-01 as post-v4 delta 95 and locked in V5) for
+    // structural depth in the pink-lotus palette build — 18% of
+    // composition points (Calvin's pick), chosen by a
+    // multiplicative integer hash of the point index (uniform
+    // across foci, layers and shells), recolored AFTER the
+    // bake so the duplicates below copy them verbatim. Two
+    // tones split by the point's own baked luminance (median
+    // split). Originally browns (sienna #994615 / umber
+    // #572a0b); recolored 2026-11-01 (Calvin) to a deep
+    // blue-green pair. Values are in baked space (source
+    // hexes x DUST_GAIN): deep teal #1b6f77 on the bright
+    // half, deep petrol #0a343c on the dark half.
+    (function brownPass() {
+      var lums = [];
+      for (var bi = 0; bi < FAMa.length; bi++) {
+        if (FAMa[bi] !== FAM.SHELL) continue;
+        lums.push(0.2126 * C[bi * 3] + 0.7152 * C[bi * 3 + 1] + 0.0722 * C[bi * 3 + 2]);
+      }
+      var sorted = lums.slice().sort(function (a, b) { return a - b; });
+      var med = sorted[Math.floor(sorted.length / 2)];
+      var TEAL = [0.1059 * 1.56605735, 0.4353 * 1.56605735, 0.4667 * 1.56605735];
+      var PETROL = [0.0392 * 1.56605735, 0.2039 * 1.56605735, 0.2353 * 1.56605735];
+      var li = 0;
+      for (var bj = 0; bj < FAMa.length; bj++) {
+        if (FAMa[bj] !== FAM.SHELL) continue;
+        var lum = lums[li++];
+        var bh = ((bj * 2654435761) >>> 0) / 4294967296;
+        if (bh < 0.18) {
+          var br = lum >= med ? TEAL : PETROL;
+          C[bj * 3] = br[0]; C[bj * 3 + 1] = br[1]; C[bj * 3 + 2] = br[2];
+        }
+      }
+    })();
+
     // Post-v3 delta 2026-10-31 (Calvin): duplicate the ENTIRE
     // composition twice — one copy overlaid rotated 30°
     // clockwise, one 60° clockwise. Post-V4 delta 2026-10-31
@@ -2819,7 +2858,12 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     // 2026-10-31 (Calvin): RESET zoom to default — back to 1.5x,
     // the engine's normal full-fit framing (same reset as
     // 2026-10-25).
-    return 1.5 * (RW / 2 - 16) / mx;
+    // LOTUS chain (2026-11-01, Calvin; folded live as post-v4
+    // delta 95, locked in V5): zoom IN 20% —
+    // 1.5 x 1.20 = 1.8x. Then zoom IN 12% more the same day:
+    // 1.8 x 1.12 = 2.016x. Then another 12%: 2.016 x 1.12 =
+    // 2.25792x. Then Calvin set an absolute target: 2.5x.
+    return 2.5 * (RW / 2 - 16) / mx;
   }
 
   // ---- canvas renderer ------------------------------------------------------
@@ -3037,6 +3081,136 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       // are gone and the linework's endpoints went with them.
       // The web pair sets remain computed on the cloud for the
       // record.)
+
+      // Vertex linework (auditioned 2026-10-31, folded live
+      // 2026-11-01 as post-v4 delta 95 and locked in V5) on
+      // the major vertices (Calvin: all three skeleton options,
+      // union) — the foci triangle at all 5 layer scales and
+      // the fold-track triangle (the center spokes were part
+      // of the union, removed 2026-11-01, then restored the
+      // same day at Calvin's direction);
+      // drawn for the base composition and
+      // the stepped twin, in all four orientations. The
+      // skeleton follows the dust's transform pipeline (twin
+      // rotation, projection, ROT_CW90, orientation turns) but
+      // is not folded, waved or smoothed — it is the fixed
+      // rigging the dust hangs on.
+      (function linework() {
+        var CVL = cloud.CV;
+        var bS = camBasis(cloud, lp), tS = [0, 0, 0];
+        var scales = [1, Math.SQRT2, 2, 2 * Math.SQRT2, 4];
+        var TRI_R = 0.5 * cloud.RMAX;
+        var foci = [0, 1, 2].map(function (k) {
+          var a = Math.PI / 2 + k * TAU / 3;
+          return [TRI_R * Math.cos(a), TRI_R * Math.sin(a)];
+        });
+        var rcS = Math.cos(ROT_CW90), rsS = Math.sin(ROT_CW90);
+        var ovc2 = Math.cos(ov), ovs2 = Math.sin(ov);
+        function proj(x, y, twin) {
+          if (twin) {
+            var dx = x - CVL[0], dy = y - CVL[1];
+            x = CVL[0] + dx * ovc2 - dy * ovs2;
+            y = CVL[1] + dx * ovs2 + dy * ovc2;
+          }
+          project3(x, y, CVL[2], bS, tS, 0);
+          return [tS[0] * rcS - tS[1] * rsS, tS[0] * rsS + tS[1] * rcS];
+        }
+        function px(p, ang) {
+          var ca = Math.cos(ang), sa = Math.sin(ang);
+          return [(p[0] * ca - p[1] * sa) * SC + half, (p[0] * sa + p[1] * ca) * SC + half];
+        }
+        sctx.strokeStyle = "#8B008B"; // deep magenta (2026-11-01, Calvin; was black)
+        sctx.lineWidth = 0.5; // 0.5px hairlines (2026-11-01, Calvin; was 1px, originally 2px)
+        var angs = [0, Math.PI / 6, Math.PI / 3, Math.PI / 2];
+        // Collect segments first (base pass, then twin pass).
+        // Each segment strokes individually: one batched path
+        // of ~264 subpaths rasterizes with gaps in some stroke
+        // engines (measured up to 42px missing on later
+        // subpaths); per-segment strokes are uniformly solid.
+        // The twin skeleton is drawn ONLY when it is genuinely
+        // distinct from the base skeleton (2026-11-01, Calvin
+        // caught the doubling): the twin is rotated in 3D
+        // before the tilted projection while the orientation
+        // copies turn in screen space, so at the hold phases
+        // the twin's skeleton shadows the base's almost exactly
+        // (measured: 130 of 132 segments coincide within 4px,
+        // relabeled) — drawing both gives the slightly-off
+        // doubled lines, most visibly along the bottom edges.
+        // A frame-level skip rule was tried for one sample
+        // (merge the twin at holds, draw it during eases) —
+        // Calvin overruled it the same night: "the skeleton
+        // can remain drawn for smooth animation". The whole
+        // skeleton — base + twin — now draws every frame; the
+        // faint hold-phase shadow is accepted as the price of
+        // a skeleton that never pops in or out.
+        var baseSegs = [], twinSegs = [];
+        for (var tw = 0; tw < 2; tw++) {
+          var verts = scales.map(function (sc2) {
+            return foci.map(function (f) {
+              return proj(CVL[0] + (f[0] - CVL[0]) * sc2, CVL[1] + (f[1] - CVL[1]) * sc2, tw === 1);
+            });
+          });
+          var foldV = [0, 1, 2].map(function (k) {
+            var a = TRI_PHI + k * TAU / 3;
+            return proj(CVL[0] + FOLD_R * Math.cos(a), CVL[1] + FOLD_R * Math.sin(a), tw === 1);
+          });
+          var ctr = proj(CVL[0], CVL[1], tw === 1); // center point for the spokes (removed for two samples, restored 2026-11-01 at Calvin's direction)
+          var sink = tw === 0 ? baseSegs : twinSegs;
+          for (var oi = 0; oi < angs.length; oi++) { // was oi < 3: the +90° orientation skeleton was never drawn (Calvin caught the incomplete pattern, 2026-11-01)
+            var ang = angs[oi];
+            var seg = function (p, q) {
+              var P1 = px(p, ang), P2 = px(q, ang);
+              sink.push([P1[0], P1[1], P2[0], P2[1]]);
+            };
+            verts.forEach(function (tri) {
+              seg(tri[0], tri[1]); seg(tri[1], tri[2]); seg(tri[2], tri[0]);
+              tri.forEach(function (vtx) { seg(ctr, vtx); }); // spokes restored 2026-11-01 (Calvin) — they flow through the same strokeSeg as the edges, so thickness (0.5px), stipple ([3, 3]) and opacity (70%) match by construction
+            });
+            seg(foldV[0], foldV[1]); seg(foldV[1], foldV[2]); seg(foldV[2], foldV[0]);
+          }
+        }
+        // Every segment is extended along its own line to the
+        // frame edges (2026-11-01, Calvin picked "Everything"
+        // from three mocks): each edge becomes a
+        // full frame-width construction line, clipped to the
+        // canvas box.
+        function chord(s) {
+          var dx = s[2] - s[0], dy = s[3] - s[1];
+          var t0 = -1e9, t1 = 1e9, ta, tb;
+          if (Math.abs(dx) < 1e-9) { if (s[0] < 0 || s[0] > RW) return null; }
+          else { ta = (0 - s[0]) / dx; tb = (RW - s[0]) / dx; t0 = Math.max(t0, Math.min(ta, tb)); t1 = Math.min(t1, Math.max(ta, tb)); }
+          if (Math.abs(dy) < 1e-9) { if (s[1] < 0 || s[1] > RW) return null; }
+          else { ta = (0 - s[1]) / dy; tb = (RW - s[1]) / dy; t0 = Math.max(t0, Math.min(ta, tb)); t1 = Math.min(t1, Math.max(ta, tb)); }
+          if (t0 > t1) return null;
+          return [s[0] + dx * t0, s[1] + dy * t0, s[0] + dx * t1, s[1] + dy * t1];
+        }
+        // Stippled at 70% opacity (2026-11-01, Calvin): each
+        // chord is drawn as [3, 3] dashes — 3px ink, 3px gap —
+        // stepped geometrically along the line (not
+        // setLineDash, which some rasterizers lack), batched
+        // as one path per chord, under globalAlpha 0.7. The
+        // alpha is restored to 1 immediately after — it must
+        // never leak into the dust pass.
+        function strokeSeg(s) {
+          var ch = chord(s);
+          if (!ch) return;
+          var dx = ch[2] - ch[0], dy = ch[3] - ch[1];
+          var len = Math.hypot(dx, dy);
+          if (len < 0.5) return;
+          var ux = dx / len, uy = dy / len;
+          sctx.beginPath();
+          for (var d = 0; d < len; d += 6) {
+            var e = Math.min(d + 3, len);
+            sctx.moveTo(ch[0] + ux * d, ch[1] + uy * d);
+            sctx.lineTo(ch[0] + ux * e, ch[1] + uy * e);
+          }
+          sctx.stroke();
+        }
+        sctx.globalAlpha = 0.7;
+        baseSegs.forEach(strokeSeg);
+        twinSegs.forEach(strokeSeg);
+        sctx.globalAlpha = 1;
+      })();
 
       // final composite + 180° rotation. The 7px composite
       // blur of delta 69 was removed the same day at Calvin's
