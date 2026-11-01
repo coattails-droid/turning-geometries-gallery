@@ -2910,6 +2910,15 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     var bucketSeen = new Int32Array(groupStyles.length);
     var bucketStamp = 0;
 
+    // Motion smoothing state (post-v3 delta 2026-10-31): the
+    // previous frame's DISPLAYED positions, kept per renderer.
+    // drawFrame blends them toward each new computed frame so
+    // uneven frame cadence (a long frame followed by a
+    // double-size motion step) spreads over a few frames
+    // instead of landing as one visible jump.
+    var smX = new Float32Array(n), smY = new Float32Array(n);
+    var smT = 0, smOn = false;
+
     // Stepped tracing REMOVED 2026-10-28 at Calvin's direction
     // ("remove tracing"; the blur came off in the previous delta).
     // The renderer now draws exactly one frame — no echo history,
@@ -2940,6 +2949,28 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       // interior (1x layer, inner shells — pale gold) to darkest
       // at the exterior (4x layer, outer shells — deep plum).
       var F = computeFrame(cloud, lp, ov);
+      // Motion smoothing (post-v3 delta 2026-10-31, Calvin:
+      // frame-to-frame transitions flicker): blend the displayed
+      // positions toward the newly computed ones with
+      // k = 1 - 0.5^(dt*60) — half the remaining distance per
+      // 60fps frame, frame-rate independent. Snaps (no blend) on
+      // the first frame and on any time jump over 0.25s (tab
+      // switch, scroll pause, loop wrap), so stills and resumes
+      // stay exact. (Speckle positions were already pixel-snapped
+      // by the Math.trunc in the bucket pass below — this adds
+      // the temporal half of the fix.)
+      var sdt = timeSec - smT;
+      if (smOn && sdt > 0 && sdt <= 0.25) {
+        var sk = 1 - Math.pow(0.5, sdt * 60);
+        for (var si2 = 0; si2 < n; si2++) {
+          smX[si2] += (F.sx[si2] - smX[si2]) * sk;
+          smY[si2] += (F.sy[si2] - smY[si2]) * sk;
+          F.sx[si2] = smX[si2]; F.sy[si2] = smY[si2];
+        }
+      } else {
+        smX.set(F.sx); smY.set(F.sy); smOn = true;
+      }
+      smT = timeSec;
       var sx = F.sx, sy = F.sy, sz = F.sz;
       sortByDepth(sz); // far -> near (stable radix; see createRenderer)
 
