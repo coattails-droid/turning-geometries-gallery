@@ -601,8 +601,22 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   // changes). Sorted ascending afterwards so ring index j still runs
   // innermost → outermost (the ring-fade alpha keys on it). Spacing is
   // non-uniform by design: number-driven, on-thesis.
+  //
+  // SERIES RULE (post-V5 delta 96, 2026-11-01, Calvin — the "token 11
+  // character" lock): the candidate ladder is restricted to the window
+  // n ∈ [8, 18] (radii mod·√8 … mod·√18 = 1.414 … 2.121 in world
+  // units), drawn from a fixed bound (mod·√18) instead of the
+  // per-token weld bound. This guarantees, for every token:
+  //   1. NO INNER SHELLS — the smallest possible radius is 1.414.
+  //   2. CLUSTERED SHELLS — max/min ≤ √(18/8) = 1.5 exactly.
+  //   3. NEAR-EVEN SPREAD — the density law (250 + 650·(R/RMAX)²)
+  //      then allocates per-shell points with max/min ≤ 1.67
+  //      (token 11's own spread; the old ladder allowed 2.86).
+  // The window holds exactly 7 rungs {8, 9, 10, 13, 16, 17, 18};
+  // every token picks ringCount of them with the same seeded shuffle.
   function selectRadii(tokenHash, mod, maxR, ringCount) {
-    const all = latticeRadii(mod, maxR);
+    const all = latticeRadii(mod, mod * Math.sqrt(18))
+      .filter(function (o) { return o.n >= 8 && o.n <= 18; });
     const n = Math.min(ringCount, all.length);
     const s = SeedKit.streamFor(tokenHash, "rings:radii");
     const idx = all.map(function (_, i) { return i; });
