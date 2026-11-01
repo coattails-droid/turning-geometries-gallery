@@ -1985,7 +1985,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   var SHELL_BG = 1.0; // Turning delta 2026-10-24: shells in the background (0.18); post-v1 2026-10-25 (Calvin): 0.36 -> 0.54 steady -> MAX 1.0, full gradient color
   var DUST_GAIN = 1.56605735; // post-v2 delta 2026-10-29 (Calvin): dust brightness +15% (1.15); post-v3 delta 2026-10-29 (Calvin): +30% more — 1.15 x 1.3 = 1.495; post-v3 delta 2026-10-30 (Calvin): reduce dust brightness across all layers by 11% — 1.495 x 0.89 = 1.33055; post-v3 delta 2026-10-30 (Calvin): increase dust brightness by 7% — 1.33055 x 1.07 = 1.4236885; post-v3 delta 2026-10-30 (Calvin, "deepen the colors and increase brightness", medium option): brightness +10% — 1.4236885 x 1.10 = 1.56605735. Multiplies the layer-ramp colors in buildPointCloud (draw clamps each channel at 1, so the brightest band clips)
   var DUST_CONTRAST = 1.464; // post-v3 delta 2026-10-29 (Calvin): dust contrast +22% — 1.22; post-v3 delta 2026-10-30 (Calvin, "deepen the colors", medium option): contrast +20% — 1.22 x 1.20 = 1.464. Each baked color is pushed away from the ramp's per-channel mean by this factor in buildPointCloud (mean preserved, spread widened)
-  var POINT_TOTAL = 111120; // post-v2 delta 2026-10-29 (Calvin): composition point count LOCKED series-wide — every token builds exactly this many composition points (see the shell allocation in buildPointCloud). Post-v3 delta 2026-10-31 (Calvin): the composition is duplicated twice (+30° / +60° overlays, buildDups), so the rendered total is 3 x POINT_TOTAL. It was 144,000 (rendered 432,000) until post-v3 delta 2026-10-31 (Calvin: "try 333,333 speckles") thinned it to 111,120 — rendered 333,360, the nearest reachable total (the structure allocates in multiples of 90: 3 foci x 5 layers x 2 twins x 3 orientations x per-system points)
+  var POINT_TOTAL = 37050; // post-v2 delta 2026-10-29 (Calvin): composition point count LOCKED series-wide — every token builds exactly this many composition points (see the shell allocation in buildPointCloud). Post-v3 delta 2026-10-31 (Calvin): the composition is duplicated twice (+30° / +60° overlays, buildDups), so the rendered total is 3 x POINT_TOTAL. History: 144,000 (rendered 432,000) -> 111,120 (rendered 333,360; Calvin: "try 333,333 speckles") -> 37,050 (rendered 111,150; Calvin: "lets try 111,111 speckles") — each the nearest reachable total, since the structure allocates in multiples of 90 (3 foci x 5 layers x 2 twins x 3 orientations x per-system points)
   var LOOP_S = 16, BREATH_S = 8;
   var SPEED = 0.5333333333333333; // pace history: 0.5, raised 23% to 0.615 on 2026-10-28 (loop 26.02s), set to 0.9142857142857143 on 2026-10-29 for a 7-minute full cycle; post-v2 delta 2026-10-29 (Calvin): slowed so the full 24-loop overlay cycle spans exactly 12 minutes — each fold loop is 30s of wall time (16 / 0.5333333333333333 = 30; 24 x 30 = 720s)
 
@@ -2229,8 +2229,8 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     // rendered total is locked at POINT_TOTAL for every token.
     // The composition multiplies one focus system by 3 foci x
     // 5 layers x 2 twins = 30, so each focus system must hold
-    // exactly POINT_TOTAL / 30 points (3,704 since the
-    // 2026-10-31 thinning; was 4,800). The shells keep
+    // exactly POINT_TOTAL / 30 points (1,235 since the
+    // 2026-10-31 thinnings; was 4,800, then 3,704). The shells keep
     // the established density law (250 + 650*(R/RMAX)^2 per
     // shell) as weights, rescaled to that budget by
     // largest-remainder rounding so the per-shell counts sum
