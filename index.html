@@ -3316,11 +3316,11 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     var tr = document.createElement("div");
     tr.className = "traits";
     var gt = Turning3D.geometryTraits(geo, cloud);
-    var rows = gt.map(function (t) {
-      var v = t.value;
-      if (t.trait_type === "Point") v = Number(v).toLocaleString("en-US");
-      var label = t.trait_type === "Point" ? "Points" : t.trait_type;
-      return label + " &mdash; <b>" + v + "</b>";
+    // Calvin (2026-11-01): only traits that VARY across the series
+    // belong on the card — Point is locked at 148,200 for every
+    // token, so it comes off (same call he made for Shell in 2026-10).
+    var rows = gt.filter(function (t) { return t.trait_type !== "Point"; }).map(function (t) {
+      return t.trait_type + " &mdash; <b>" + t.value + "</b>";
     });
     tr.innerHTML = rows.join("<br>");
     fig.appendChild(stage); fig.appendChild(cap); fig.appendChild(tr);
