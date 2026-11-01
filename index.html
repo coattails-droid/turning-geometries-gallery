@@ -2645,7 +2645,30 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     var pos = F.pos, bright = F.bright;
     var P = cloud.P, FQ = cloud.FQ, FD = cloud.FD, FCX = cloud.FCX,
         FTX = cloud.FTX, FTY = cloud.FTY, FSDOT = cloud.FSDOT;
+    // Invisible optimization (post-v3 delta 2026-10-31, Calvin —
+    // same play as delta 65): derived points (layer copies,
+    // overlay twins, composition duplicates) have their fold
+    // positions overwritten from their sources later in this
+    // function, so the fold math on them is dead work; twins
+    // and duplicates likewise discard the wave push, and
+    // duplicates discard their projection (their screen
+    // position derives from the source's). Skip masks are
+    // built once per cloud; output is byte-identical.
+    var SK = cloud._sk;
+    if (!SK) {
+      SK = cloud._sk = { fold: new Uint8Array(n), wave: new Uint8Array(n), dup: new Uint8Array(n) };
+      var DUPa = cloud.DUP, TWa = cloud.TWIN, DRa = cloud.DUPR;
+      for (var si = 0; si < n; si++) {
+        var isDup = DRa && DRa[si] !== 0 ? 1 : 0;
+        var isTwin = TWa && TWa[si] >= 0 ? 1 : 0;
+        var isCopy = DUPa && DUPa[si] >= 0 ? 1 : 0;
+        SK.dup[si] = isDup;
+        SK.wave[si] = isTwin || isDup ? 1 : 0;
+        SK.fold[si] = isCopy || isTwin || isDup ? 1 : 0;
+      }
+    }
     for (var i = 0; i < n; i++) {
+      if (SK.fold[i]) continue;
       var i3 = i * 3;
       pos[i3] = FQ[i3] + FD[i3] * fc + FCX[i3] * fs + FTX[i] * FSDOT[i] * fk;
       pos[i3 + 1] = FQ[i3 + 1] + FD[i3 + 1] * fc + FCX[i3 + 1] * fs + FTY[i] * FSDOT[i] * fk;
@@ -2668,7 +2691,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     var FAMo = cloud.FAM;
     // shells: puff + ignite
     for (var s = 0; s < n; s++) {
-      if (FAMo[s] !== 0) continue; // SHELL
+      if (FAMo[s] !== 0 || SK.wave[s]) continue; // SHELL, non-derived
       var gs = wavePush(cloud.DIST[s], wp, RMAX), s3 = s * 3, g = gs * 0.10;
       if (cloud.DUP && cloud.DUP[s] >= 0) g *= cloud.SCL[s]; // copies: keep nesting exact
       pos[s3] += cloud.AX[s] * g; pos[s3 + 1] += cloud.AY[s] * g; pos[s3 + 2] += cloud.AZ[s] * g;
@@ -2703,6 +2726,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     var b0 = camBasis(cloud, lp), t3 = [0, 0, 0];
     var sx = F.sx, sy = F.sy, sz = F.sz;
     for (var p = 0; p < n; p++) {
+      if (SK.dup[p]) continue; // duplicates derive screen pos below
       project3(pos[p * 3], pos[p * 3 + 1], pos[p * 3 + 2], b0, t3, 0);
       sx[p] = t3[0]; sy[p] = t3[1]; sz[p] = t3[2];
     }
@@ -2717,6 +2741,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     // the ROT180 composite flip, which preserves the sense.
     var rc = Math.cos(ROT_CW90), rs = Math.sin(ROT_CW90);
     for (var q = 0; q < n; q++) {
+      if (SK.dup[q]) continue; // duplicates derive screen pos below
       var qx = sx[q], qy = sy[q];
       sx[q] = qx * rc - qy * rs;
       sy[q] = qx * rs + qy * rc;
