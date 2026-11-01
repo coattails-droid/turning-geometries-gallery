@@ -2905,7 +2905,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     // allocation or array growth).
     var grpCount = new Int32Array(groupStyles.length);
     for (var gc = 0; gc < n; gc++) if (cloud.FAM[gc] === 0) grpCount[grpOf[gc]]++;
-    var buckets = groupStyles.map(function (s, g) { return new Int32Array(grpCount[g] * 2); });
+    var buckets = groupStyles.map(function (s, g) { return new Float32Array(grpCount[g] * 2); }); // post-v3 delta 2026-10-31: float buckets hold sub-pixel speckle positions (were Int32Array whole pixels until delta 93)
     var bucketFill = new Int32Array(groupStyles.length);
     var bucketSeen = new Int32Array(groupStyles.length);
     var bucketStamp = 0;
@@ -2956,9 +2956,9 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       // 60fps frame, frame-rate independent. Snaps (no blend) on
       // the first frame and on any time jump over 0.25s (tab
       // switch, scroll pause, loop wrap), so stills and resumes
-      // stay exact. (Speckle positions were already pixel-snapped
-      // by the Math.trunc in the bucket pass below — this adds
-      // the temporal half of the fix.)
+      // stay exact. (The spatial half of the anti-flicker work
+      // is the sub-pixel speckle drawing of delta 93 below;
+      // this blend is the temporal half.)
       var sdt = timeSec - smT;
       if (smOn && sdt > 0 && sdt <= 0.25) {
         var sk = 1 - Math.pow(0.5, sdt * 60);
@@ -3001,7 +3001,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       bucketFill.fill(0);
       for (var o = 0; o < n; o++) {
         var idx = order[o];
-        var X = Math.trunc(sx[idx] * SC + half), Y = Math.trunc(sy[idx] * SC + half);
+        var X = sx[idx] * SC + half, Y = sy[idx] * SC + half; // post-v3 delta 2026-10-31: sub-pixel positions (no Math.trunc) — the canvas coverage-blends speckles across pixel boundaries instead of popping between whole pixels, which read as flicker on desktop (auditioned as sample-98, Calvin: "i think 98 is better")
         if (X < -12 || Y < -12 || X >= RW + 12 || Y >= RW + 12) continue;
         if (cloud.FAM[idx] !== 0) continue; // only SHELL dust is built
         var bg = grpOf[idx];
