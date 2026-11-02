@@ -7,11 +7,11 @@
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="description" content="Turning Geometries — Series 7. A small generative series of 25: triangular Fibonacci shells in a pink-lotus palette folding through a slow four-minute cycle, rendered live in your browser.">
+<meta name="description" content="Turning Geometries — Series 7. A small generative series of 25: triangular Fibonacci shells in a pink-lotus or sunlight palette folding through a slow four-minute cycle, rendered live in your browser.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Turning Geometries">
 <meta property="og:title" content="Turning Geometries">
-<meta property="og:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a pink-lotus palette, folding through a slow four-minute cycle, rendered live in your browser.">
+<meta property="og:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a pink-lotus or sunlight palette, folding through a slow four-minute cycle, rendered live in your browser.">
 <meta property="og:url" content="https://coattails-droid.github.io/turning-geometries-gallery/">
 <meta property="og:image" content="https://coattails-droid.github.io/turning-geometries-gallery/og-still.png">
 <meta property="og:image:width" content="1080">
@@ -19,7 +19,7 @@
 <meta property="og:image:alt" content="Turning Geometries token 1">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Turning Geometries">
-<meta name="twitter:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a pink-lotus palette, folding through a slow four-minute cycle, rendered live in your browser.">
+<meta name="twitter:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a pink-lotus or sunlight palette, folding through a slow four-minute cycle, rendered live in your browser.">
 <meta name="twitter:image" content="https://coattails-droid.github.io/turning-geometries-gallery/og-still.png">
 <title>Turning Geometries</title>
 <style>
@@ -46,7 +46,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
 <header>
   <h1>TURNING GEOMETRIES</h1>
   <p class="sub">Series 7</p>
-  <p class="desc">A small series of 25 animated tokens. Triangular Fibonacci shells bloom from three foci in a pink-lotus palette, folding through a slow four-minute cycle beneath a stippled magenta construction lattice &mdash; every token&rsquo;s shells clustered in the outer field, so each piece fills its frame edge to edge.</p>
+  <p class="desc">A small series of 25 animated tokens. Triangular Fibonacci shells bloom from three foci in a pink-lotus or sunlight palette, folding through a slow four-minute cycle beneath a stippled construction lattice &mdash; every token&rsquo;s shells clustered in the outer field, so each piece fills its frame edge to edge.</p>
 </header>
 <div id="grid"></div>
 <script>
@@ -177,9 +177,11 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
 <script>
 // traits.js — Method 1 coarse trait derivation and rarity.
 //
-// Turning Geometries trait map — TWO traits remain (Calvin,
-// 2026-10-28: "Everything other than grid and density can be
-// removed from traits"):
+// Turning Geometries trait map — grid + density remain from
+// the 2026-10-28 slimming (Calvin: "Everything other than grid
+// and density can be removed from traits"), and PALETTE was
+// restored 2026-11-02 (post-V8 delta 101, Calvin) as a live
+// trait — Sunlight 50 / Lotus 50, byte 1 (its original byte):
 //
 //   grid system         -> SERIES-LOCKED to fusion-inv (Linear Grid
 //                          over Ring Field; byte 0 no longer read;
@@ -188,13 +190,18 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
 //                          read; locked 2026-10-29 at Calvin's direction),
 //                          which also locks the ring count at 6
 //
-// Removed 2026-10-28: palette (byte 1), accent (byte 3), accent
-// hue set (byte 4 + the "traits:hues" stream), dot grid
-// (byte 5), wave trains (byte 6) — they described the dot layer
-// and the audio, both gone from the piece, and had no visible
-// effect on the render. The renderer is series-locked where
-// those traits used to point: Sunset render palette, square
-// dot placement for the dormant web record, double wave trains.
+// Removed 2026-10-28: accent (byte 3), accent hue set
+// (byte 4 + the "traits:hues" stream), dot grid (byte 5),
+// wave trains (byte 6) — they described the dot layer and the
+// audio, both gone from the piece, and had no visible effect
+// on the render. Palette (byte 1) was removed with them and
+// RESTORED as a trait 2026-11-02 (delta 101): the sunlight
+// build Calvin approved in audition (sunlight ramp + deep
+// amber linework + the shared contrast-speckle pass) locked
+// in against the lotus build at 50/50. The renderer is
+// series-locked where the other removed traits used to
+// point: square dot placement for the dormant web record,
+// double wave trains.
 //
 // Ring count is DERIVED from the density trait via DENSITY_RINGS
 // below (sparse -> 3, standard -> 6, dense -> 9), not a separate
@@ -241,6 +248,19 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   // Ring count derived from density — one fewer slice, zero redundancy.
   const DENSITY_RINGS = { sparse: 3, standard: 6, dense: 9 };
 
+  // Palette (restored 2026-11-02, post-V8 delta 101, Calvin:
+  // "lock it in as a trait — Palette: Sunlight 50, Lotus 50").
+  // Byte 1 — palette's original Method-1 byte — through the
+  // rarity weights below. Sunlight = the delta-94 ramp with
+  // deep amber #d97706 linework; Lotus = the V5 ramp with deep
+  // magenta #8B008B linework. Both run the same 18%
+  // contrast-speckle pass. The renderer's per-palette configs
+  // (ramp / shell-in / linework color) live in turning.js.
+  const PALETTES = [
+    { key: "sunlight", label: "Sunlight", weight: 50 },
+    { key: "lotus", label: "Lotus", weight: 50 },
+  ];
+
 
 
 
@@ -248,7 +268,8 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   function deriveTraits(tokenHash) {
     const grid = "fusion-inv"; // series-locked (see GRIDS note)
     const density = "standard"; // series-locked (see DENSITIES note)
-    return { grid: grid, density: density, rings: DENSITY_RINGS[density] };
+    const palette = SeedKit.weightedPick(SeedKit.sliceByte(tokenHash, 1), PALETTES);
+    return { grid: grid, density: density, rings: DENSITY_RINGS[density], palette: palette };
   }
 
 
@@ -265,7 +286,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   function scoreRarity(populationTraits, traits) {
     const n = populationTraits.length;
     let score = 0;
-    ["grid", "density", "rings"].forEach(function (k) {
+    ["grid", "density", "rings", "palette"].forEach(function (k) {
       const count = populationTraits.filter(function (p) { return traitEq(p[k], traits[k]); }).length;
       score += n / Math.max(1, count);
     });
@@ -284,6 +305,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     GRIDS: GRIDS,
     DENSITIES: DENSITIES,
     DENSITY_RINGS: DENSITY_RINGS,
+    PALETTES: PALETTES,
     deriveTraits: deriveTraits,
     compositeFor: compositeFor,
     scoreRarity: scoreRarity,
@@ -2035,25 +2057,38 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   var SUN_RAMP_RGB = ["#fde9e9", "#ffb7d1", "#dd98dd", "#9bbf83",
                       "#26a88d", "#1f9368", "#187945", "#0f4720"].map(hexrgb);
 
+  // Post-V8 delta 101 (2026-11-02, Calvin): palette is a trait
+  // again — Sunlight 50 / Lotus 50 (traits.js, byte 1). The
+  // SUNLIGHT ramp below is the delta-94 / V7-locked ramp; the
+  // ramp above is LOTUS. Each palette's full config (ramp,
+  // shell-in, linework color) sits in PALETTES below.
+  var SUNLIGHT_RAMP_RGB = ["#ffd98f", "#ffd166", "#ffcf6e", "#ff9e4a",
+                           "#ff6e5e", "#e84f9e", "#9a5fd0", "#8e2f6e"].map(hexrgb);
 
-  // Render palette: series-locked to Sunset. It was a byte-7
-  // trait until 2026-10-28, when Calvin removed every trait
-  // other than grid and density; the palette was single-option
-  // (weight 100) anyway — midnight was auditioned 2026-10-24
-  // and reverted the same day — so the renderer now simply
-  // always uses "sunset".
 
+  // Render palettes (post-V8 delta 101, 2026-11-02, Calvin):
+  // palette is a per-token trait again (Sunlight 50 / Lotus 50,
+  // traits.js byte 1) — buildPointCloud resolves the token's
+  // palette from its hash when no palette is passed explicitly.
+  // Each config: RAMP (the layer-brightness ramp the dust's
+  // colors bake from), SHELL_IN (build-time placeholder color),
+  // LINE (construction-lattice stroke color). Both palettes run
+  // the same 18% contrast-speckle pass. "sunset" is the legacy
+  // pre-trait key, kept as an alias of lotus (the build that
+  // shipped as V5-V8 + delta 100).
   var PALETTES = {
-    sunset: {
-      // Palette key stays "sunset" (trait plumbing); the dust's real
-      // colors come from the layer-brightness SUN_RAMP in
-      // buildPointCloud. SHELL_IN is only the build-time
-      // placeholder color. The midnight palette and the lattice /
-      // dot-ramp / web / core / wash fields were removed in the
-      // 2026-10-27 cleanup — nothing referenced them anymore.
-      SHELL_IN: hexrgb("#fde9e9")
+    lotus: {
+      SHELL_IN: hexrgb("#fde9e9"),
+      RAMP: SUN_RAMP_RGB,
+      LINE: "#8B008B" // deep magenta (2026-11-01, Calvin)
+    },
+    sunlight: {
+      SHELL_IN: hexrgb("#ffd98f"),
+      RAMP: SUNLIGHT_RAMP_RGB,
+      LINE: "#d97706" // deep amber (2026-11-02, Calvin)
     }
   };
+  PALETTES.sunset = PALETTES.lotus;
 
   // deterministic [0,1) from hash + domain parts — EXACT mirror of py h01:
   // first byte of SHA-256("::".join(parts)) / 255
@@ -2152,13 +2187,16 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   // traits in traits.js these are
   // computed from the geometry itself, so they live here, next
   // to the build that produces them.
+  var PALETTE_LABELS = { sunlight: "Sunlight", lotus: "Lotus", sunset: "Lotus" };
   function geometryTraits(geo, cloud) {
     var uscale = 2.0 / geo.S;
     var radii = geo.radii.map(function (o) { return (o.r * uscale).toFixed(3); });
+    var pname = (cloud && cloud.paletteName) || TGTraits.deriveTraits(geo.hash).palette;
     return [
       { trait_type: "Radii", value: radii.join(" · ") },
       { trait_type: "Scale", value: cloud.RMAX.toFixed(3) },
-      { trait_type: "Point", value: cloud.n }
+      { trait_type: "Point", value: cloud.n },
+      { trait_type: "Palette", value: PALETTE_LABELS[pname] || pname }
     ];
   }
 
@@ -2189,9 +2227,10 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   // the dots in the 2026-10-27 cleanup.)
 
   function buildPointCloud(hash, geo, paletteName) {
-    // paletteName=null/undefined -> the series-locked "sunset"
-    var pname = paletteName || "sunset";
-    var pal = PALETTES[pname];
+    // paletteName=null/undefined -> the token's Palette trait
+    // (delta 101: Sunlight 50 / Lotus 50 from hash byte 1).
+    var pname = paletteName || TGTraits.deriveTraits(hash).palette;
+    var pal = PALETTES[pname] || PALETTES.lotus;
     var S = geo.S, USCALE = 2.0 / S;
     function ux(x) { return x * USCALE - 1.0; }
     function uy(y) { return 1.0 - y * USCALE; }
@@ -2489,7 +2528,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     // replaces the per-shell SHELL_IN -> SHELL_OUT gradient as the
     // dust's effective coloring. The ramp was the sea family
     // 2026-10-27..28; SUNLIGHT since delta 44, 2026-10-28.)
-    var RAMP8 = SUN_RAMP_RGB;
+    var RAMP8 = pal.RAMP;
     function rampAt(t) {
       var x = Math.min(0.99999, Math.max(0, t)) * (RAMP8.length - 1);
       var i0 = Math.floor(x);
@@ -3139,7 +3178,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
           var ca = Math.cos(ang), sa = Math.sin(ang);
           return [(p[0] * ca - p[1] * sa) * SC + half, (p[0] * sa + p[1] * ca) * SC + half];
         }
-        sctx.strokeStyle = "#8B008B"; // deep magenta (2026-11-01, Calvin; was black)
+        sctx.strokeStyle = cloud.palette.LINE; // per-palette linework color (delta 101): lotus deep magenta #8B008B, sunlight deep amber #d97706
         sctx.lineWidth = 0.5; // 0.5px hairlines (2026-11-01, Calvin; was 1px, originally 2px)
         var angs = [0, Math.PI / 6, Math.PI / 3, Math.PI / 2];
         // Collect segments first (base pass, then twin pass).
