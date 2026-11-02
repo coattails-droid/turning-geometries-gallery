@@ -2881,7 +2881,9 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     // 1.5 x 1.20 = 1.8x. Then zoom IN 12% more the same day:
     // 1.8 x 1.12 = 2.016x. Then another 12%: 2.016 x 1.12 =
     // 2.25792x. Then Calvin set an absolute target: 2.5x.
-    return 2.5 * (RW / 2 - 16) / mx;
+    // Post-v8 delta 2026-11-02 (Calvin): zoom IN 33% —
+    // 2.5 x 1.33 = 3.325x.
+    return 3.325 * (RW / 2 - 16) / mx;
   }
 
   // ---- canvas renderer ------------------------------------------------------
