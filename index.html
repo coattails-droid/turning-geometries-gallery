@@ -30,7 +30,7 @@ header { max-width: 1200px; margin: 0 auto 40px; }
 h1 { font-size: 20px; letter-spacing: 0.35em; font-weight: 600; color: #ffc46e; }
 p.sub { margin-top: 12px; font-size: 15px; letter-spacing: 0.12em; color: #9a937f; }
 p.desc { margin-top: 16px; font-size: 14.5px; line-height: 1.65; letter-spacing: 0.02em; color: #b8b09c; max-width: 620px; }
-#grid { max-width: 600px; margin: 0 auto; display: grid; grid-template-columns: 1fr; gap: 28px; }
+#grid { max-width: 500px; margin: 0 auto; display: grid; grid-template-columns: 1fr; gap: 28px; }
 .traits { padding: 0 2px 6px; font-size: 12.5px; line-height: 1.75; letter-spacing: 0.04em; color: #9a937f; }
 .traits b { color: #e8e2d4; font-weight: 400; }
 figure { margin: 0; }
@@ -3301,12 +3301,12 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   TOKENS.forEach(function (id) {
     var geo = Turning3D.geoFromToken(id);
     var cloud = Turning3D.buildPointCloud(geo.hash, geo, null);
-    var renderer = Turning3D.createRenderer(cloud, 1080);
+    var renderer = Turning3D.createRenderer(cloud, 720);
     var fig = document.createElement("figure");
     var stage = document.createElement("div");
     stage.className = "stage";
     var cv = document.createElement("canvas");
-    cv.width = 1080; cv.height = 1080;
+    cv.width = 720; cv.height = 720;
     var btn = document.createElement("div");
     btn.className = "playbtn";
     btn.innerHTML = "<span>&#9654;</span>";
