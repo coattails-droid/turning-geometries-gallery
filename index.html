@@ -15,11 +15,11 @@
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="description" content="Turning Geometries — Series 7. A small generative series of 25: triangular Fibonacci shells in a sunlight, pink-lotus or neon palette folding through a slow four-minute cycle, rendered live in your browser.">
+<meta name="description" content="Turning Geometries — Series 7. A small generative series of 25: triangular Fibonacci shells in a sunlight, pink-lotus, neon or rainbow palette folding through a slow four-minute cycle, rendered live in your browser.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Turning Geometries">
 <meta property="og:title" content="Turning Geometries">
-<meta property="og:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a sunlight, pink-lotus or neon palette, folding through a slow four-minute cycle, rendered live in your browser.">
+<meta property="og:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a sunlight, pink-lotus, neon or rainbow palette, folding through a slow four-minute cycle, rendered live in your browser.">
 <meta property="og:url" content="https://coattails-droid.github.io/turning-geometries-gallery/">
 <meta property="og:image" content="https://coattails-droid.github.io/turning-geometries-gallery/og-still.png">
 <meta property="og:image:width" content="1080">
@@ -27,7 +27,7 @@
 <meta property="og:image:alt" content="Turning Geometries token 1">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Turning Geometries">
-<meta name="twitter:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a sunlight, pink-lotus or neon palette, folding through a slow four-minute cycle, rendered live in your browser.">
+<meta name="twitter:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a sunlight, pink-lotus, neon or rainbow palette, folding through a slow four-minute cycle, rendered live in your browser.">
 <meta name="twitter:image" content="https://coattails-droid.github.io/turning-geometries-gallery/og-still.png">
 <title>Turning Geometries</title>
 <style>
@@ -54,7 +54,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
 <header>
   <h1>TURNING GEOMETRIES</h1>
   <p class="sub">Series 7</p>
-  <p class="desc">A small series of 25 animated tokens. Triangular Fibonacci shells bloom from three foci in a sunlight, pink-lotus or neon palette, folding through a slow four-minute cycle beneath a stippled construction lattice &mdash; every token&rsquo;s shells clustered in the outer field, so each piece fills its frame edge to edge.</p>
+  <p class="desc">A small series of 25 animated tokens. Triangular Fibonacci shells bloom from three foci in a sunlight, pink-lotus, neon or rainbow palette, folding through a slow four-minute cycle beneath a stippled construction lattice &mdash; every token&rsquo;s shells clustered in the outer field, so each piece fills its frame edge to edge.</p>
 </header>
 <div id="grid"></div>
 <script>
@@ -268,10 +268,17 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   // Neon, the Tidal Geometries neon palette (six bioluminescent
   // hexes, bone linework) — rebalanced to Sunlight 40 /
   // Lotus 40 / Neon 20 at Calvin's pick.
+  // Delta 104 (2026-11-10, Calvin): a FOURTH variant — Rainbow,
+  // the Rainbow Flow build (full-strength ROYGBIV cycling one
+  // spectrum per fold loop, phase-smoothed, with dust tracing
+  // & blend; renderer-side in turning.js) — rebalanced to
+  // Sunlight 36 / Lotus 36 / Neon 18 / Rainbow 10 at Calvin's
+  // pick. Palette 4 of the 5-palette target.
   const PALETTES = [
-    { key: "sunlight", label: "Sunlight", weight: 40 },
-    { key: "lotus", label: "Lotus", weight: 40 },
-    { key: "neon", label: "Neon", weight: 20 },
+    { key: "sunlight", label: "Sunlight", weight: 36 },
+    { key: "lotus", label: "Lotus", weight: 36 },
+    { key: "neon", label: "Neon", weight: 18 },
+    { key: "rainbow", label: "Rainbow", weight: 10 },
   ];
 
 
@@ -2085,6 +2092,12 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   var NEON_RAMP_RGB = ["#b6ff00", "#00ff66", "#00f0ff",
                        "#2e6bff", "#8b2bff", "#ff2bd6"].map(hexrgb);
 
+  // Delta 104 (2026-11-10): RAINBOW FLOW palette — full-strength
+  // ROYGBIV spectrum, colors cycling through the ramp (see the
+  // flow hooks in buildPointCloud / createRenderer below).
+  var ROYGBIV_RAMP_RGB = ["#ff0000", "#ff7f00", "#cccc00", "#00cc00",
+                          "#0000ff", "#4b0082", "#8f00ff"].map(hexrgb); // yellow + green deepened at Calvin's word (lightness 50% -> 40%, the deepen recipe's x0.80)
+
 
   // Render palettes (post-V8 delta 101, 2026-11-02, Calvin):
   // palette is a per-token trait again (traits.js byte 1;
@@ -2112,6 +2125,11 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       SHELL_IN: hexrgb("#b6ff00"),
       RAMP: NEON_RAMP_RGB,
       LINE: "#628a00" // deep lime, deepened a notch at Calvin's word (post-V8 delta 103: the center green #b6ff00 at the same hue, lightness 27%; bone #e9e3d3 auditioned at delta 102 and replaced; alpha stays the shared 0.7)
+    },
+    rainbow: {
+      SHELL_IN: hexrgb("#ff0000"),
+      RAMP: ROYGBIV_RAMP_RGB,
+      LINE: "#e9e3d3" // Ink only (Calvin) — the bone knockout tone, Tidal's ink
     }
   };
   PALETTES.sunset = PALETTES.lotus;
@@ -2213,7 +2231,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   // traits in traits.js these are
   // computed from the geometry itself, so they live here, next
   // to the build that produces them.
-  var PALETTE_LABELS = { sunlight: "Sunlight", lotus: "Lotus", sunset: "Lotus", neon: "Neon" };
+  var PALETTE_LABELS = { sunlight: "Sunlight", lotus: "Lotus", sunset: "Lotus", neon: "Neon", rainbow: "Rainbow" };
   function geometryTraits(geo, cloud) {
     var uscale = 2.0 / geo.S;
     var radii = geo.radii.map(function (o) { return (o.r * uscale).toFixed(3); });
@@ -2668,6 +2686,23 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       geo: geo
     };
 
+    // Delta 104 rainbow flow: per-point ramp position + kind
+    // (0 = ramp point, 1 = contrast speckle, which stays fixed
+    // while the ramp flows beneath it), plus the bake constants
+    // the renderer needs to re-derive colors at a shifted phase.
+    if (pname === "rainbow") {
+      var FT = new Float32Array(FAMa.length), FK = new Uint8Array(FAMa.length);
+      for (var fi = 0; fi < FAMa.length; fi++) {
+        if (FAMa[fi] !== FAM.SHELL) { FT[fi] = -1; continue; }
+        var fsrc = fi < total0c ? fi : DUPSRC[fi];
+        var fgen = Math.min(numGens - 1, Math.floor(fsrc / shellCount));
+        FT[fi] = (fgen + GFa[fi]) / numGens;
+        FK[fi] = (((fsrc * 2654435761) >>> 0) / 4294967296) < 0.18 ? 1 : 0;
+      }
+      cloud._flowT = FT; cloud._flowKind = FK;
+      cloud._flowPiv = piv; cloud._flowGain = gain0;
+    }
+
     // Fold rigging — the core track is now a TRIANGLE (post-v1
     // delta 2026-10-28, Calvin: both circles -> triangles): each
     // point's anchor q sits on the triangle of circumradius
@@ -2962,6 +2997,10 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     var scene = document.createElement("canvas");
     scene.width = RW; scene.height = RW;
     var sctx = scene.getContext("2d");
+    // Delta 104 rainbow flow: dust tracing state — a ring of
+    // scene snapshots (see the composite in drawFrame).
+    var traceHist = [], traceN = 0, traceLastT = -1;
+    var traceOn = cloud.paletteName === "rainbow"; // tracing is a Rainbow-palette treatment only
     // (The wash overlay canvas, the dot spectrum stops, and the web
     // stroke colors went in the 2026-10-27 cleanup — the dots and
     // the linework they served are gone; only dust renders now.)
@@ -3038,6 +3077,25 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
     var grpCount = new Int32Array(groupStyles.length);
     for (var gc = 0; gc < n; gc++) if (cloud.FAM[gc] === 0) grpCount[grpOf[gc]]++;
     var buckets = groupStyles.map(function (s, g) { return new Float32Array(grpCount[g] * 2); }); // post-v3 delta 2026-10-31: float buckets hold sub-pixel speckle positions (were Int32Array whole pixels until delta 93)
+    // Delta 104 rainbow flow: each group's mean ramp position;
+    // a group is fixed if none of its points are ramp points
+    // (the contrast-speckle groups stay put).
+    var grpT = null, grpFixed = null;
+    var flowP = -1, flowT0 = 0; // delta 104: smoothed color phase (unwrapped cycles) + last frame time
+    if (cloud._flowT) {
+      grpT = new Float32Array(groupStyles.length);
+      grpFixed = new Uint8Array(groupStyles.length).fill(1);
+      var gSum = new Float32Array(groupStyles.length), gCnt = new Int32Array(groupStyles.length);
+      for (var fi2 = 0; fi2 < n; fi2++) {
+        if (cloud.FAM[fi2] !== 0) continue;
+        if (cloud._flowKind[fi2] === 0 && cloud._flowT[fi2] >= 0) {
+          var gg = grpOf[fi2];
+          grpFixed[gg] = 0; gSum[gg] += cloud._flowT[fi2]; gCnt[gg]++;
+        }
+      }
+      for (var g2i = 0; g2i < groupStyles.length; g2i++)
+        if (gCnt[g2i] > 0) grpT[g2i] = gSum[g2i] / gCnt[g2i];
+    }
     var bucketFill = new Int32Array(groupStyles.length);
     var bucketSeen = new Int32Array(groupStyles.length);
     var bucketStamp = 0;
@@ -3128,6 +3186,40 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       // fill in depth order, groups flush in first-appearance
       // order — the same draw sequence as the per-frame
       // string-grouped pass this replaces.
+      // Delta 104 rainbow flow: shift every ramp group's color
+      // along the spectrum — one full cycle per 30s fold loop
+      // (8 per 240s master cycle). Integer cycles at both
+      // periods, so the loop stays seamless.
+      if (grpT) {
+        // Phase smoothing (Calvin: "wanting the colors to
+        // fade into the shifts"): the color phase rides the
+        // same dt-aware EMA as the position smoothing —
+        // k = 1 - 0.5^(dt*60), snapping only on jumps over
+        // 0.25s — so uneven frame delivery glides instead of
+        // stepping the whole field at once, and stills (jump
+        // draws) stay exact.
+        var targetF = timeSec / 30;
+        if (flowP < 0) flowP = targetF;
+        var fdt = timeSec - flowT0;
+        if (fdt > 0 && fdt <= 0.25) flowP += (targetF - flowP) * (1 - Math.pow(0.5, fdt * 60));
+        else flowP = targetF;
+        flowT0 = timeSec;
+        var shF = ((flowP % 1) + 1) % 1;
+        var pivF = cloud._flowPiv, gainF = cloud._flowGain;
+        for (var fg = 0; fg < groupStyles.length; fg++) {
+          if (grpFixed[fg]) continue;
+          var ttF = grpT[fg] + shF; if (ttF >= 1) ttF -= 1;
+          var xxF = Math.min(0.99999, Math.max(0, ttF)) * (ROYGBIV_RAMP_RGB.length - 1);
+          var iF = Math.floor(xxF);
+          var rcF = lerp3(ROYGBIV_RAMP_RGB[iF], ROYGBIV_RAMP_RGB[iF + 1], xxF - iF);
+          var rF = pivF[0] + (rcF[0] * gainF - pivF[0]) * DUST_CONTRAST;
+          var gF = pivF[1] + (rcF[1] * gainF - pivF[1]) * DUST_CONTRAST;
+          var bF = pivF[2] + (rcF[2] * gainF - pivF[2]) * DUST_CONTRAST;
+          var smxF = Math.max(rF, gF, bF);
+          var sclF = smxF > 1 ? 1 / smxF : 1;
+          groupStyles[fg] = "rgba(" + Math.round(rF * sclF * 255) + "," + Math.round(gF * sclF * 255) + "," + Math.round(bF * sclF * 255) + ",0.4229225)";
+        }
+      }
       bucketStamp++;
       var dustOrder = [];
       bucketFill.fill(0);
@@ -3321,10 +3413,41 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       // frame again; the square speckles of delta 68 stay.
       // (Blur history: 0.45px composite blur removed 2026-10-28;
       // 7px blur lived for one delta, 69.)
+      // Delta 104 rainbow flow: dust tracing + blend, at the
+      // historical delta-23 profile (8 echoes, one snapshot
+      // every 2nd frame, ~0.27s at 60fps, stepped alphas up
+      // to 0.55) — but the echoes are scene snapshots drawn
+      // under the current frame, so they blend where the old
+      // per-point ghosts stepped. A time jump over 0.5s (or
+      // backward) flushes the history, as in delta 23.
+      if (!traceOn) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        if (ROT180) ctx.setTransform(-1, 0, 0, -1, RW, RW);
+        ctx.drawImage(scene, 0, 0);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      } else {
+      if (traceLastT < 0 || timeSec - traceLastT > 0.5 || timeSec < traceLastT) traceHist.length = 0;
+      traceLastT = timeSec;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       if (ROT180) ctx.setTransform(-1, 0, 0, -1, RW, RW);
+      for (var te = 0; te < traceHist.length; te++) {
+        ctx.globalAlpha = 0.55 * (te + 1) / 8;
+        ctx.drawImage(traceHist[te], 0, 0);
+      }
+      ctx.globalAlpha = 1;
       ctx.drawImage(scene, 0, 0);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
+      if ((traceN++ & 1) === 0) {
+        var snap = traceHist.length < 8 ? null : traceHist.shift();
+        if (!snap) { snap = document.createElement("canvas"); snap.width = RW; snap.height = RW; }
+        var snapCtx = snap.getContext("2d");
+        snapCtx.setTransform(1, 0, 0, 1, 0, 0);
+        snapCtx.globalAlpha = 1;
+        snapCtx.clearRect(0, 0, RW, RW);
+        snapCtx.drawImage(scene, 0, 0);
+        traceHist.push(snap);
+      }
+      }
     }
 
     var rafId = 0, t0 = 0, fpsN = 0, fpsT = 0, onFps = null;
@@ -3362,7 +3485,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
 </script>
 <script>
 
-  var TOKENS = [1,2,3];
+  var TOKENS = [1,2,3,8];
   var grid = document.getElementById("grid");
   var pieces = [];
   TOKENS.forEach(function (id) {
