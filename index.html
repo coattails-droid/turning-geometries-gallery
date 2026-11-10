@@ -15,11 +15,11 @@
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="description" content="Turning Geometries — Series 7. A small generative series of 25: triangular Fibonacci shells in a pink-lotus or sunlight palette folding through a slow four-minute cycle, rendered live in your browser.">
+<meta name="description" content="Turning Geometries — Series 7. A small generative series of 25: triangular Fibonacci shells in a sunlight, pink-lotus or neon palette folding through a slow four-minute cycle, rendered live in your browser.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Turning Geometries">
 <meta property="og:title" content="Turning Geometries">
-<meta property="og:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a pink-lotus or sunlight palette, folding through a slow four-minute cycle, rendered live in your browser.">
+<meta property="og:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a sunlight, pink-lotus or neon palette, folding through a slow four-minute cycle, rendered live in your browser.">
 <meta property="og:url" content="https://coattails-droid.github.io/turning-geometries-gallery/">
 <meta property="og:image" content="https://coattails-droid.github.io/turning-geometries-gallery/og-still.png">
 <meta property="og:image:width" content="1080">
@@ -27,7 +27,7 @@
 <meta property="og:image:alt" content="Turning Geometries token 1">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Turning Geometries">
-<meta name="twitter:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a pink-lotus or sunlight palette, folding through a slow four-minute cycle, rendered live in your browser.">
+<meta name="twitter:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a sunlight, pink-lotus or neon palette, folding through a slow four-minute cycle, rendered live in your browser.">
 <meta name="twitter:image" content="https://coattails-droid.github.io/turning-geometries-gallery/og-still.png">
 <title>Turning Geometries</title>
 <style>
@@ -54,7 +54,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
 <header>
   <h1>TURNING GEOMETRIES</h1>
   <p class="sub">Series 7</p>
-  <p class="desc">A small series of 25 animated tokens. Triangular Fibonacci shells bloom from three foci in a pink-lotus or sunlight palette, folding through a slow four-minute cycle beneath a stippled construction lattice &mdash; every token&rsquo;s shells clustered in the outer field, so each piece fills its frame edge to edge.</p>
+  <p class="desc">A small series of 25 animated tokens. Triangular Fibonacci shells bloom from three foci in a sunlight, pink-lotus or neon palette, folding through a slow four-minute cycle beneath a stippled construction lattice &mdash; every token&rsquo;s shells clustered in the outer field, so each piece fills its frame edge to edge.</p>
 </header>
 <div id="grid"></div>
 <script>
@@ -264,9 +264,14 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   // magenta #8B008B linework. Both run the same 18%
   // contrast-speckle pass. The renderer's per-palette configs
   // (ramp / shell-in / linework color) live in turning.js.
+  // Post-V8 delta 102 (2026-11-10, Calvin): a third variant —
+  // Neon, the Tidal Geometries neon palette (six bioluminescent
+  // hexes, bone linework) — rebalanced to Sunlight 40 /
+  // Lotus 40 / Neon 20 at Calvin's pick.
   const PALETTES = [
-    { key: "sunlight", label: "Sunlight", weight: 50 },
-    { key: "lotus", label: "Lotus", weight: 50 },
+    { key: "sunlight", label: "Sunlight", weight: 40 },
+    { key: "lotus", label: "Lotus", weight: 40 },
+    { key: "neon", label: "Neon", weight: 20 },
   ];
 
 
@@ -2073,10 +2078,18 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   var SUNLIGHT_RAMP_RGB = ["#ffd98f", "#ffd166", "#ffcf6e", "#ff9e4a",
                            "#ff6e5e", "#e84f9e", "#9a5fd0", "#8e2f6e"].map(hexrgb);
 
+  // Post-V8 delta 102 (2026-11-10, Calvin): the NEON ramp —
+  // Tidal Geometries' six primary neon colors (NEON_DOT_COLORS
+  // in the Tidal engine), the cool bioluminescent spectrum in
+  // spectral order, lime through magenta.
+  var NEON_RAMP_RGB = ["#b6ff00", "#00ff66", "#00f0ff",
+                       "#2e6bff", "#8b2bff", "#ff2bd6"].map(hexrgb);
+
 
   // Render palettes (post-V8 delta 101, 2026-11-02, Calvin):
-  // palette is a per-token trait again (Sunlight 50 / Lotus 50,
-  // traits.js byte 1) — buildPointCloud resolves the token's
+  // palette is a per-token trait again (traits.js byte 1;
+  // delta 102, 2026-11-10: Sunlight 40 / Lotus 40 / Neon 20) —
+  // buildPointCloud resolves the token's
   // palette from its hash when no palette is passed explicitly.
   // Each config: RAMP (the layer-brightness ramp the dust's
   // colors bake from), SHELL_IN (build-time placeholder color),
@@ -2094,6 +2107,11 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       SHELL_IN: hexrgb("#ffd98f"),
       RAMP: SUNLIGHT_RAMP_RGB,
       LINE: "#d97706" // deep amber (2026-11-02, Calvin)
+    },
+    neon: {
+      SHELL_IN: hexrgb("#b6ff00"),
+      RAMP: NEON_RAMP_RGB,
+      LINE: "#e9e3d3" // bone — Tidal's linework ink (delta 102)
     }
   };
   PALETTES.sunset = PALETTES.lotus;
@@ -2195,7 +2213,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   // traits in traits.js these are
   // computed from the geometry itself, so they live here, next
   // to the build that produces them.
-  var PALETTE_LABELS = { sunlight: "Sunlight", lotus: "Lotus", sunset: "Lotus" };
+  var PALETTE_LABELS = { sunlight: "Sunlight", lotus: "Lotus", sunset: "Lotus", neon: "Neon" };
   function geometryTraits(geo, cloud) {
     var uscale = 2.0 / geo.S;
     var radii = geo.radii.map(function (o) { return (o.r * uscale).toFixed(3); });
@@ -3344,7 +3362,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
 </script>
 <script>
 
-  var TOKENS = [1,2];
+  var TOKENS = [1,2,3];
   var grid = document.getElementById("grid");
   var pieces = [];
   TOKENS.forEach(function (id) {
