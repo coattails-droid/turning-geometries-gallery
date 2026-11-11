@@ -15,11 +15,11 @@
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="description" content="Turning Geometries — Series 7. A small generative series of 25: triangular Fibonacci shells in a sunlight, pink-lotus, neon or rainbow palette folding through a slow four-minute cycle, rendered live in your browser.">
+<meta name="description" content="Turning Geometries — Series 7. A small generative series of 25: triangular Fibonacci shells in a sunlight, pink-lotus, neon, rainbow or ultraviolet palette folding through a slow four-minute cycle, rendered live in your browser.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Turning Geometries">
 <meta property="og:title" content="Turning Geometries">
-<meta property="og:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a sunlight, pink-lotus, neon or rainbow palette, folding through a slow four-minute cycle, rendered live in your browser.">
+<meta property="og:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a sunlight, pink-lotus, neon, rainbow or ultraviolet palette, folding through a slow four-minute cycle, rendered live in your browser.">
 <meta property="og:url" content="https://coattails-droid.github.io/turning-geometries-gallery/">
 <meta property="og:image" content="https://coattails-droid.github.io/turning-geometries-gallery/og-still.png">
 <meta property="og:image:width" content="1080">
@@ -27,7 +27,7 @@
 <meta property="og:image:alt" content="Turning Geometries token 1">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Turning Geometries">
-<meta name="twitter:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a sunlight, pink-lotus, neon or rainbow palette, folding through a slow four-minute cycle, rendered live in your browser.">
+<meta name="twitter:description" content="Series 7 — a small series of 25. Triangular Fibonacci shells in a sunlight, pink-lotus, neon, rainbow or ultraviolet palette, folding through a slow four-minute cycle, rendered live in your browser.">
 <meta name="twitter:image" content="https://coattails-droid.github.io/turning-geometries-gallery/og-still.png">
 <title>Turning Geometries</title>
 <style>
@@ -54,7 +54,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
 <header>
   <h1>TURNING GEOMETRIES</h1>
   <p class="sub">Series 7</p>
-  <p class="desc">A small series of 25 animated tokens. Triangular Fibonacci shells bloom from three foci in a sunlight, pink-lotus, neon or rainbow palette, folding through a slow four-minute cycle beneath a stippled construction lattice &mdash; every token&rsquo;s shells clustered in the outer field, so each piece fills its frame edge to edge.</p>
+  <p class="desc">A small series of 25 animated tokens. Triangular Fibonacci shells bloom from three foci in a sunlight, pink-lotus, neon, rainbow or ultraviolet palette, folding through a slow four-minute cycle beneath a stippled construction lattice &mdash; every token&rsquo;s shells clustered in the outer field, so each piece fills its frame edge to edge.</p>
 </header>
 <div id="grid"></div>
 <script>
@@ -274,11 +274,19 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   // & blend; renderer-side in turning.js) — rebalanced to
   // Sunlight 36 / Lotus 36 / Neon 18 / Rainbow 10 at Calvin's
   // pick. Palette 4 of the 5-palette target.
+  // Delta 105 (2026-11-10, Calvin): the FIFTH variant —
+  // Ultraviolet, copied from Calvin's photo of a violet-core /
+  // dark-green-field piece (violet ramp dissolving through
+  // deep blue and teal to a deep green rim, pale lavender
+  // linework; renderer-side in turning.js) — rebalanced to
+  // Sunlight 31 / Lotus 31 / Neon 15 / Rainbow 8 / Ultraviolet
+  // 15 at Calvin's pick. THE 5-PALETTE SET IS COMPLETE.
   const PALETTES = [
-    { key: "sunlight", label: "Sunlight", weight: 36 },
-    { key: "lotus", label: "Lotus", weight: 36 },
-    { key: "neon", label: "Neon", weight: 18 },
-    { key: "rainbow", label: "Rainbow", weight: 10 },
+    { key: "sunlight", label: "Sunlight", weight: 31 },
+    { key: "lotus", label: "Lotus", weight: 31 },
+    { key: "neon", label: "Neon", weight: 15 },
+    { key: "rainbow", label: "Rainbow", weight: 8 },
+    { key: "ultraviolet", label: "Ultraviolet", weight: 15 },
   ];
 
 
@@ -2098,6 +2106,16 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   var ROYGBIV_RAMP_RGB = ["#ff0000", "#ff7f00", "#cccc00", "#00cc00",
                           "#0000ff", "#4b0082", "#8f00ff"].map(hexrgb); // yellow + green deepened at Calvin's word (lightness 50% -> 40%, the deepen recipe's x0.80)
 
+  // Delta 105 (2026-11-10): ULTRAVIOLET palette — copied from
+  // Calvin's photo (violet core dissolving into a dark
+  // blue-green field): hue walks violet -> blue -> teal ->
+  // green along the generation ramp. Photo-measured: core
+  // hues 240-270 (means #5345be / #7046b7), mid blue #426593,
+  // outer teal #2b6262 + green #2f704f; linework measured
+  // pale lavender. Static bake like Sunlight / Lotus / Neon.
+  var ULTRAVIOLET_RAMP_RGB = ["#6a2bf0", "#5f2bd8", "#4c2fc0", "#38299e",
+                              "#1f4470", "#17565e", "#1a6e3c", "#123f22"].map(hexrgb);
+
 
   // Render palettes (post-V8 delta 101, 2026-11-02, Calvin):
   // palette is a per-token trait again (traits.js byte 1;
@@ -2130,6 +2148,11 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
       SHELL_IN: hexrgb("#ff0000"),
       RAMP: ROYGBIV_RAMP_RGB,
       LINE: "#e9e3d3" // Ink only (Calvin) — the bone knockout tone, Tidal's ink
+    },
+    ultraviolet: {
+      SHELL_IN: hexrgb("#6a2bf0"),
+      RAMP: ULTRAVIOLET_RAMP_RGB,
+      LINE: "#cfcdea" // pale lavender, measured from the photo's spokes (delta 105)
     }
   };
   PALETTES.sunset = PALETTES.lotus;
@@ -2231,7 +2254,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   // traits in traits.js these are
   // computed from the geometry itself, so they live here, next
   // to the build that produces them.
-  var PALETTE_LABELS = { sunlight: "Sunlight", lotus: "Lotus", sunset: "Lotus", neon: "Neon", rainbow: "Rainbow" };
+  var PALETTE_LABELS = { sunlight: "Sunlight", lotus: "Lotus", sunset: "Lotus", neon: "Neon", rainbow: "Rainbow", ultraviolet: "Ultraviolet" };
   function geometryTraits(geo, cloud) {
     var uscale = 2.0 / geo.S;
     var radii = geo.radii.map(function (o) { return (o.r * uscale).toFixed(3); });
@@ -3485,7 +3508,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
 </script>
 <script>
 
-  var TOKENS = [1,2,3,8];
+  var TOKENS = [1,2,3,5,8];
   var grid = document.getElementById("grid");
   var pieces = [];
   TOKENS.forEach(function (id) {
