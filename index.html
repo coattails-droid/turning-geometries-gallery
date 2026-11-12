@@ -289,11 +289,16 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
   // the audition files). The set is FOUR palettes, reweighted
   // at Calvin's direction: Sunlight 50 / Lotus 30 / Neon 10 /
   // Ultraviolet 10.
+  // Delta 107 (2026-11-12, Calvin): weights rebalanced to
+  // Sunlight 60 / Lotus 24 / Neon 8 / Ultraviolet 8. Demo-hash
+  // supply 1–25 deals 15 Sunlight / 6 Lotus / 1 Neon /
+  // 3 Ultraviolet (Token 8 is the supply's only Neon);
+  // demo 1–150: 82 / 41 / 10 / 17.
   const PALETTES = [
-    { key: "sunlight", label: "Sunlight", weight: 50 },
-    { key: "lotus", label: "Lotus", weight: 30 },
-    { key: "neon", label: "Neon", weight: 10 },
-    { key: "ultraviolet", label: "Ultraviolet", weight: 10 },
+    { key: "sunlight", label: "Sunlight", weight: 60 },
+    { key: "lotus", label: "Lotus", weight: 24 },
+    { key: "neon", label: "Neon", weight: 8 },
+    { key: "ultraviolet", label: "Ultraviolet", weight: 8 },
   ];
 
 
@@ -3405,7 +3410,7 @@ figcaption { padding: 10px 2px; font-size: 14px; letter-spacing: 0.08em; color: 
 </script>
 <script>
 
-  var TOKENS = [1,2,5,8];
+  var TOKENS = [1,2,8,16];
   var grid = document.getElementById("grid");
   var pieces = [];
   TOKENS.forEach(function (id) {
